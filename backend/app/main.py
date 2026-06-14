@@ -1,17 +1,20 @@
 """
 L.E.A.D.S. — Legal Education & Analytical Deep-Search
-FastAPI backend (Phase 0: RAG Deep-Research Engine + Document/Case-File Analyzer)
+FastAPI backend (Phase 1: Deep-Research Engine with live case law + hybrid
+retrieval, on top of the Phase 0 Document/Case-File Analyzer)
 
 =============================================================================
 GUARDRAILS (NON-NEGOTIABLE — baked into the design):
   * PUBLIC / LICENSED legal data ONLY. The seed corpus is real public U.S.
-    statutory text (FDCPA, FCRA, DPPA, GLBA).
+    statutory text (FDCPA, FCRA, DPPA, GLBA). Live case law comes ONLY from the
+    public CourtListener REST API (Free Law Project) — official API, no scraping.
   * The Case-File Analyzer works ONLY on user-uploaded documents. There is no
     web scraping and no PII harvesting anywhere in this service.
   * The LLM router makes stateless completion calls — no provider is asked to
     train on, learn from, or retain any data.
   * Uploaded / privileged documents stay LOCAL (ChromaDB persistent dir,
-    ./chroma_db) and are NEVER published.
+    ./chroma_db) and are NEVER published. CourtListener opinions are cached
+    LOCALLY (./.cache) only to respect rate limits — never published.
 =============================================================================
 """
 from __future__ import annotations
@@ -26,12 +29,12 @@ from pydantic import BaseModel
 # Load .env from the backend root (explicit path so it works under `-m app.main`).
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 
-from app.services import casefile, llm_router, rag  # noqa: E402
+from app.services import casefile, courtlistener, llm_router, rag  # noqa: E402
 
 app = FastAPI(
     title="L.E.A.D.S. API",
-    description="Legal Education & Analytical Deep-Search — Phase 0",
-    version="0.1.0",
+    description="Legal Education & Analytical Deep-Search — Phase 1 (Deep-Research Engine)",
+    version="0.2.0",
 )
 
 _origins = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173").split(",")
@@ -57,6 +60,7 @@ def _startup() -> None:
 # --- Models ------------------------------------------------------------------
 class AskRequest(BaseModel):
     question: str
+    deep: bool = True  # True = also fetch live CourtListener case law; False = seeded statutes only
 
 
 class CaseAskRequest(BaseModel):
@@ -70,18 +74,26 @@ def health() -> dict:
     return {
         "status": "ok",
         "service": "L.E.A.D.S.",
-        "phase": 0,
+        "phase": 1,
         "llm_providers": llm_router.available_providers(),
-        "legal_chunks": rag.get_collection().count(),
+        "corpus_size": rag.get_collection().count(),
+        "courtlistener": courtlistener.availability(),
     }
 
 
 @app.post("/api/ask")
 def ask(req: AskRequest) -> dict:
-    """Cited answer over the public legal seed corpus (FDCPA/FCRA/DPPA/GLBA)."""
+    """
+    Deep-research answer. The pipeline plans the query, (optionally) fetches live
+    CourtListener case law, retrieves over statutes + opinions via hybrid
+    dense+BM25+RRF search, and synthesizes a citation-grounded answer with
+    conflict detection, grounding, and follow-up suggestions.
+
+    deep=True (default): include live case law. deep=False: seeded statutes only.
+    """
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="question is required")
-    return rag.answer(req.question)
+    return rag.answer(req.question, deep=req.deep)
 
 
 @app.post("/api/casefile/upload")

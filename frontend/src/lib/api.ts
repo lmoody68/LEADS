@@ -5,14 +5,46 @@ export interface Citation {
   source_title: string;
   citation: string;
   section?: string;
+  court?: string;
+  date?: string;
+  url?: string;
+  doc_type?: string;
+  legal_section?: string;
   snippet: string;
   score: number;
+}
+
+export interface IngestedCase {
+  case_name: string;
+  citation: string;
+  court: string;
+  date: string;
+  url: string;
+}
+
+export interface RetrievalDebug {
+  dense_top?: { citation: string; section: string; rel: number }[];
+  bm25_top?: { citation: string; section: string; bm25: number }[];
+  fused?: number;
+  fused_top?: {
+    citation: string;
+    dense_rank: number | null;
+    bm25_rank: number | null;
+    rrf: number;
+  }[];
 }
 
 export interface AnswerResponse {
   answer: string;
   citations: Citation[];
   provider: string;
+  rewritten_query?: string;
+  legal_issues?: string[];
+  conflicts?: string[];
+  followups?: string[];
+  grounding?: string;
+  retrieval?: RetrievalDebug;
+  ingested?: IngestedCase[];
 }
 
 export interface Entities {
@@ -43,8 +75,8 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export function ask(question: string): Promise<AnswerResponse> {
-  return post<AnswerResponse>("/ask", { question });
+export function ask(question: string, deep = true): Promise<AnswerResponse> {
+  return post<AnswerResponse>("/ask", { question, deep });
 }
 
 export function casefileAsk(question: string, collectionId: string): Promise<AnswerResponse> {

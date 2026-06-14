@@ -12,6 +12,11 @@
 **/chroma_db/
 **/uploads/
 
+# CourtListener opinion cache + server logs (local only)
+**/.cache/
+**/server.log
+**/*.log
+
 # Node / Vite
 **/node_modules/
 **/dist/

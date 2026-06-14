@@ -15,6 +15,14 @@ chroma_db/
 # Uploaded case files staging (privileged — local only)
 uploads/
 
+# CourtListener opinion cache (locally fetched public opinions — kept local to
+# respect rate limits; never published)
+.cache/
+
+# Server logs
+server.log
+*.log
+
 # OS
 .DS_Store
 Thumbs.db
