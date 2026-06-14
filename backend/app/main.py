@@ -44,6 +44,7 @@ from app.services import (  # noqa: E402
     ingest,
     llm_router,
     rag,
+    reranker,
     sandbox,
     tutor,
 )
@@ -113,6 +114,8 @@ def _startup() -> None:
     print(
         f"[L.E.A.D.S.] LLM providers configured: {providers or 'NONE (extractive fallback active)'}"
     )
+    # Warm the cross-encoder reranker so the first query isn't slow (non-fatal).
+    reranker.warm_up()
 
 
 # --- Models ------------------------------------------------------------------
@@ -213,6 +216,7 @@ def health() -> dict:
         "corpus_size": rag.get_collection().count(),
         "courtlistener": courtlistener.availability(),
         "citator": {"available": citator.has_token()},
+        "reranker": reranker.status(),
     }
 
 
@@ -636,6 +640,19 @@ def ingest_openstates_route(req: GovDataIngestRequest) -> dict:
         jurisdiction=(req.jurisdiction or "").strip() or None,
         limit=req.limit,
     )
+
+
+@app.post("/api/ingest/recap")
+def ingest_recap_route(req: GovDataIngestRequest) -> dict:
+    """
+    Ingest federal court DOCKETS matching a query from CourtListener's RECAP
+    archive (public PACER records via the official API) for litigation research.
+    Uses COURTLISTENER_API_TOKEN for higher rate limits.
+    """
+    if not req.query.strip():
+        raise HTTPException(status_code=400, detail="query is required")
+    _enforce_len(req.query, "query")
+    return govdata.ingest_recap(req.query.strip(), limit=req.limit)
 
 
 # --- Phase 8: Real citation network (MasterBuildPlan §3.3 enhancement) --------

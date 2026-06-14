@@ -632,3 +632,104 @@ def ingest_openstates(query: str, jurisdiction: Optional[str] = None, limit: int
             ingested_meta.append({"title": title, "citation": citation, "url": web_url})
 
     return _finish("openstates", query, col, size_before, new_docs, ingested_meta, skipped)
+
+
+# =============================================================================
+# RECAP / PACER dockets — federal court records via CourtListener (token)
+# =============================================================================
+# CourtListener's RECAP archive mirrors PACER federal court dockets (filings,
+# parties, docket entries) and is searchable full-text via the v4 search API
+# with type=r. PUBLIC court records via the OFFICIAL API — for LEGAL RESEARCH
+# (litigation, not person-location). The COURTLISTENER_API_TOKEN raises rate
+# limits; anonymous works but is throttled.
+_CL_BASE = "https://www.courtlistener.com"
+
+
+def ingest_recap(query: str, limit: int = 5) -> Dict[str, Any]:
+    """
+    Ingest federal court DOCKETS matching `query` from CourtListener's RECAP
+    archive (search type=r). Text = case metadata (cause, nature of suit, court,
+    docket number, assigned judge) + the filed-document descriptions/snippets.
+    doc_type='docket'. Dedupes by docket id / citation. Graceful on any failure.
+    """
+    limit = _clamp(limit)
+    col = rag.get_collection(rag.LEGAL_COLLECTION)
+    size_before = col.count()
+    existing = _existing_source_keys()
+
+    token = (os.getenv("COURTLISTENER_API_TOKEN") or "").strip()
+    headers = {"Authorization": f"Token {token}"} if token else None
+    note = "" if token else "No COURTLISTENER_API_TOKEN — RECAP search is heavily rate-limited anonymously."
+
+    qp = httpx.QueryParams({"type": "r", "q": query.strip(), "order_by": "dateFiled desc"})
+
+    skipped = 0
+    new_docs: List[Dict[str, Any]] = []
+    ingested_meta: List[Dict[str, Any]] = []
+
+    with httpx.Client() as client:
+        resp = _get(client, f"{_CL_BASE}/api/rest/v4/search/?{qp}", extra_headers=headers)
+        if resp is None:
+            return _empty("recap", query, size_before, (note + " " if note else "") + "RECAP search returned no data.")
+        try:
+            results = resp.json().get("results", []) or []
+        except Exception:
+            return _empty("recap", query, size_before, "RECAP returned malformed JSON.")
+
+        for d in results[:limit]:
+            docket_id = d.get("docket_id")
+            case_name = (d.get("caseName") or "Federal docket").strip()
+            docket_no = (d.get("docketNumber") or "").strip()
+            court = (d.get("court") or d.get("court_citation_string") or "").strip()
+            cite_court = (d.get("court_citation_string") or d.get("court_id") or court).strip()
+            citation = f"{docket_no} ({cite_court})".strip() if docket_no else f"{case_name} ({cite_court})"
+            abs_url = (d.get("docket_absolute_url") or "").strip()
+            web_url = (_CL_BASE + abs_url) if abs_url.startswith("/") else abs_url
+            key = (f"docket:{docket_id}" if docket_id else "") or _norm_key(citation) or _norm_key(web_url)
+            if key and key in existing:
+                skipped += 1
+                continue
+
+            # Build legal-research text from the docket's metadata + filings.
+            meta_lines = [
+                f"Case: {case_name}",
+                f"Court: {court}" if court else "",
+                f"Docket No.: {docket_no}" if docket_no else "",
+                f"Date filed: {d.get('dateFiled','')}" if d.get("dateFiled") else "",
+                f"Cause: {d.get('cause','')}" if d.get("cause") else "",
+                f"Nature of suit: {d.get('suitNature','')}" if d.get("suitNature") else "",
+                f"Assigned to: {d.get('assignedTo','')}" if d.get("assignedTo") else "",
+            ]
+            doc_bits: List[str] = []
+            for rd in (d.get("recap_documents") or [])[:5]:
+                if not isinstance(rd, dict):
+                    continue
+                desc = (rd.get("description") or "").strip()
+                snip = _clean(rd.get("snippet") or "")
+                bit = " — ".join(p for p in [desc, snip] if p)
+                if bit:
+                    doc_bits.append(f"• {bit}")
+            text = "\n".join(p for p in meta_lines if p)
+            if doc_bits:
+                text += "\n\nFilings:\n" + "\n".join(doc_bits)
+            if len(text.strip()) < 25:
+                skipped += 1
+                continue
+            existing.add(key)
+
+            new_docs.append(
+                {
+                    "id": "recap_" + re.sub(r"[^a-zA-Z0-9]+", "_", str(docket_id or citation))[:60],
+                    "source_title": case_name,
+                    "citation": citation,
+                    "section": court or "Federal docket",
+                    "doc_type": "docket",
+                    "court": court,
+                    "date": (d.get("dateFiled") or ""),
+                    "url": web_url,
+                    "text": text[:60000],
+                }
+            )
+            ingested_meta.append({"title": case_name, "citation": citation, "court": court, "url": web_url})
+
+    return _finish("recap", query, col, size_before, new_docs, ingested_meta, skipped, note=note)

@@ -61,6 +61,11 @@ const SOURCES: Record<
     scope: "State (optional) — e.g. California or ca",
     hint: "Keyword search of STATE legislation (free OpenStates key).",
   },
+  recap: {
+    label: "RECAP (federal dockets)",
+    placeholder: "Query — e.g. FDCPA attorney debt collection",
+    hint: "Federal court dockets/filings via CourtListener RECAP (public PACER records).",
+  },
 };
 
 export default function DataView() {
@@ -190,8 +195,8 @@ export default function DataView() {
         <p className="text-sm text-slate-500">
           Grow the legal corpus from <strong>official public-data APIs only</strong> — case law
           (CourtListener), statutes (govinfo), regulations (Federal Register, eCFR), federal
-          legislation (Congress.gov), state legislation (OpenStates), and rulemaking dockets
-          (Regulations.gov) — check citations against the{" "}
+          legislation (Congress.gov), state legislation (OpenStates), rulemaking dockets
+          (Regulations.gov), and federal court dockets (RECAP) — check citations against the{" "}
           <strong>real CourtListener citation network</strong>, and discover{" "}
           <strong>public legal datasets</strong> (Hugging Face Hub). No scraping, no bot-protection /
           rate-limit evasion, and <strong>no PII / people-search data</strong> — PII datasets are

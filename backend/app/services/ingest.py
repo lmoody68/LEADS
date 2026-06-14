@@ -498,7 +498,9 @@ def status() -> Dict[str, Any]:
             doc_type = meta.get("doc_type", "statute") or "statute"
             cite = (meta.get("citation") or "").lower()
             url = (meta.get("url") or "").lower()
-            if doc_type == "opinion" or "courtlistener.com" in url:
+            if doc_type == "docket":
+                bucket = "recap (court dockets)"
+            elif doc_type == "opinion" or "courtlistener.com" in url:
                 bucket = "courtlistener (case law)"
             elif "federalregister.gov" in url or cite.startswith("fed. reg"):
                 bucket = "federal register (rules)"

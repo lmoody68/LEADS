@@ -538,7 +538,8 @@ export type GovDataEndpoint =
   | "ecfr"
   | "congress"
   | "regulations"
-  | "openstates";
+  | "openstates"
+  | "recap";
 
 export function ingestGovData(
   endpoint: GovDataEndpoint,

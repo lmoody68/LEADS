@@ -31,7 +31,7 @@ import chromadb
 from chromadb.utils import embedding_functions
 from rank_bm25 import BM25Okapi
 
-from . import courtlistener, llm_router, query_planner
+from . import courtlistener, llm_router, query_planner, reranker
 
 # --- Paths -------------------------------------------------------------------
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]  # .../backend
@@ -274,17 +274,21 @@ def hybrid_retrieve(
     k: int = 5,
     collection_name: str = LEGAL_COLLECTION,
     rrf_k: int = 60,
+    rerank: bool = True,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Hybrid retrieval = dense (Chroma embeddings) + sparse (BM25), fused with
     Reciprocal Rank Fusion (RRF): score(d) = sum_over_rankers 1/(rrf_k + rank_d).
+    When a cross-encoder reranker is available, the fused top candidates are
+    re-scored jointly against the query and the best k are returned (a precision
+    boost on top of RRF recall); otherwise the RRF order is used.
 
     Returns (hits, debug) where debug exposes per-ranker top results so callers
     can prove hybrid retrieval actually ran.
     """
     col = get_collection(collection_name)
     if col.count() == 0:
-        return [], {"dense_top": [], "bm25_top": [], "fused": 0}
+        return [], {"dense_top": [], "bm25_top": [], "fused": 0, "reranked": False}
 
     pool = max(k * 3, 12)
     dense = _dense_ranked(query, col, pool)
@@ -308,9 +312,22 @@ def hybrid_retrieve(
         entry["rrf"] += 1.0 / (rrf_k + rank + 1)
         entry["bm25_rank"] = rank + 1
 
-    ranked = sorted(fused.values(), key=lambda e: e["rrf"], reverse=True)[:k]
-    hits = [_hit_from_meta(e["doc"], e["meta"], e["rrf"]) for e in ranked]
+    # Rank by RRF, then rerank a larger candidate pool down to k with the
+    # cross-encoder (graceful no-op if the reranker is unavailable).
+    ranked_all = sorted(fused.values(), key=lambda e: e["rrf"], reverse=True)
+    rerank_pool = max(k * 4, 20)
+    ranked = ranked_all[:rerank_pool]
+    pool_hits = [_hit_from_meta(e["doc"], e["meta"], e["rrf"]) for e in ranked]
 
+    reranked = False
+    if rerank and reranker.available():
+        hits = reranker.rerank(query, pool_hits, top_k=k)
+        reranked = any("rerank_score" in h for h in hits)
+    else:
+        hits = pool_hits[:k]
+
+    # RRF top-k (pre-rerank) for transparency in the debug panel.
+    rrf_top_k = ranked[:k]
     debug = {
         "dense_top": [
             {"citation": m.get("citation", ""), "section": m.get("legal_section", m.get("section", "")), "rel": round(r, 4)}
@@ -321,14 +338,16 @@ def hybrid_retrieve(
             for (_d, m, s) in sparse[:5]
         ],
         "fused": len(fused),
+        "reranked": reranked,
+        "rerank_pool": len(pool_hits),
         "fused_top": [
             {
-                "citation": h["citation"],
+                "citation": _hit_from_meta(e["doc"], e["meta"], e["rrf"])["citation"],
                 "dense_rank": e["dense_rank"],
                 "bm25_rank": e["bm25_rank"],
                 "rrf": round(e["rrf"], 5),
             }
-            for h, e in zip(hits, ranked)
+            for e in rrf_top_k
         ],
     }
     return hits, debug
