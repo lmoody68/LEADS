@@ -20,6 +20,9 @@
 # BKT per-session mastery state (Phase 4) — local only, anonymous, never published
 **/bkt_state/
 
+# Phase 7 ingestion: registered public-dataset metadata (local aux store, never published)
+**/datasets_store/
+
 # Node / Vite
 **/node_modules/
 **/dist/

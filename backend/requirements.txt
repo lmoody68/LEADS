@@ -7,6 +7,14 @@ pdfplumber
 python-multipart
 httpx
 python-dotenv
+# Phase 7 — public legal-dataset discovery (HF Hub listing API; no auth needed).
+huggingface_hub
+# OPTIONAL Phase 7 deps — lazy/guarded imports; the app boots fine WITHOUT them.
+#   datasets : stream a small sample of a public legal dataset into the corpus.
+#   kaggle   : discover Kaggle legal datasets (only if kaggle.json creds present).
+# Uncomment to enable:
+# datasets
+# kaggle
 # OCR is OPTIONAL and import-guarded in code (requires a Tesseract binary on PATH).
 # Uncomment to enable image OCR for the Document Analyzer:
 # pytesseract

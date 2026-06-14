@@ -4,8 +4,9 @@ import MemoView from "./views/MemoView";
 import ComplianceView from "./views/ComplianceView";
 import DocumentView from "./views/DocumentView";
 import TutorView from "./views/TutorView";
+import DataView from "./views/DataView";
 
-type Tab = "research" | "memo" | "compliance" | "document" | "tutor";
+type Tab = "research" | "memo" | "compliance" | "document" | "tutor" | "data";
 
 // One source of truth for the tab nav: label + a one-line "what this does" blurb
 // shown under the header. Keeps the nav consistent and gives every tab a clear
@@ -40,6 +41,12 @@ const TABS: { id: Tab; label: string; blurb: string }[] = [
     label: "Tutor",
     blurb:
       "Adaptive investigative-methodology tutor powered by Bayesian Knowledge Tracing (BKT) — lessons, quizzes, a practice sandbox, and a red/yellow/green mastery dashboard.",
+  },
+  {
+    id: "data",
+    label: "Data",
+    blurb:
+      "Admin/ingestion: grow the corpus from official public-data APIs (CourtListener, govinfo) and discover public legal datasets (Hugging Face Hub). Official APIs only — no scraping, no PII.",
   },
 ];
 
@@ -91,8 +98,10 @@ export default function App() {
             <ComplianceView />
           ) : tab === "document" ? (
             <DocumentView />
-          ) : (
+          ) : tab === "tutor" ? (
             <TutorView />
+          ) : (
+            <DataView />
           )}
         </div>
         <p className="mt-4 text-center text-xs text-slate-400">

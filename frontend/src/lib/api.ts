@@ -424,6 +424,107 @@ export function ask(question: string, deep = true): Promise<AnswerResponse> {
   return post<AnswerResponse>("/ask", { question, deep });
 }
 
+// --- Phase 7: Automated Public-Legal-Data Ingestion -------------------------
+export interface IngestResult {
+  source: string;
+  query?: string;
+  jurisdiction?: string;
+  collection?: string;
+  added: number;
+  skipped_dupes: number;
+  corpus_size_before: number;
+  corpus_size_after: number;
+  ingested: Array<Record<string, string>>;
+  note?: string;
+}
+
+export interface IngestStatus {
+  corpus_size: number;
+  sources_breakdown: Record<string, number>;
+  last_ingest: {
+    source: string;
+    query: string;
+    added: number;
+    skipped_dupes: number;
+    corpus_size_after: number;
+    at: string;
+  } | null;
+}
+
+export interface DiscoveredDataset {
+  name: string;
+  source: string;
+  description: string;
+  downloads: number;
+  url: string;
+  license: string;
+  is_pii_risk: boolean;
+  legal_relevant: boolean;
+}
+
+export interface DiscoverResponse {
+  query: string;
+  results: DiscoveredDataset[];
+  pii_flagged: number;
+  sources_searched: string[];
+  note?: string;
+}
+
+export interface DatasetIngestResult {
+  dataset_id: string;
+  source: string;
+  ingested_rows: number;
+  added_chunks: number;
+  corpus_size_before?: number;
+  corpus_size_after?: number;
+  mode: string;
+  note: string;
+}
+
+export function ingestCourtListener(
+  query: string,
+  limit: number,
+  jurisdiction?: string
+): Promise<IngestResult> {
+  return post<IngestResult>("/ingest/courtlistener", {
+    query,
+    limit,
+    jurisdiction: jurisdiction || undefined,
+  });
+}
+
+export function ingestGovinfo(
+  query: string,
+  limit: number,
+  collection?: string
+): Promise<IngestResult> {
+  return post<IngestResult>("/ingest/govinfo", {
+    query: query || undefined,
+    collection: collection || undefined,
+    limit,
+  });
+}
+
+export function ingestStatus(): Promise<IngestStatus> {
+  return casefileGet<IngestStatus>("/ingest/status");
+}
+
+export function discoverDatasets(q: string, limit = 12): Promise<DiscoverResponse> {
+  return casefileGet<DiscoverResponse>(
+    `/datasets/discover?q=${encodeURIComponent(q)}&limit=${limit}`
+  );
+}
+
+export function ingestDataset(
+  datasetId: string,
+  source: string
+): Promise<DatasetIngestResult> {
+  return post<DatasetIngestResult>("/datasets/ingest", {
+    dataset_id: datasetId,
+    source,
+  });
+}
+
 export function casefileAsk(question: string, collectionId: string): Promise<AnswerResponse> {
   return post<AnswerResponse>("/casefile/ask", {
     question,

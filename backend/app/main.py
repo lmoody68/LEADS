@@ -37,7 +37,9 @@ from app.services import (  # noqa: E402
     compliance,
     courtlistener,
     credibility,
+    dataset_discovery,
     doc_analysis,
+    ingest,
     llm_router,
     rag,
     sandbox,
@@ -47,12 +49,14 @@ from app.services import (  # noqa: E402
 app = FastAPI(
     title="L.E.A.D.S. API",
     description=(
-        "Legal Education & Analytical Deep-Search — v1.0.0 (Phase 6: Polish & "
-        "Portfolio). Deep-research RAG, agentic research memo, source-credibility "
-        "scoring, compliance advisor, BKT tutor + practice sandbox, and document "
-        "analysis (relationships, timeline, patterns, redaction)."
+        "Legal Education & Analytical Deep-Search — v1.1.0 (Phase 7: Automated "
+        "Public-Legal-Data Ingestion). Deep-research RAG, agentic research memo, "
+        "source-credibility scoring, compliance advisor, BKT tutor + practice "
+        "sandbox, document analysis, and official-API corpus expansion + public "
+        "legal-dataset discovery (CourtListener / govinfo / Hugging Face Hub — "
+        "official APIs only, public legal data only, no PII / scraping / evasion)."
     ),
-    version="1.0.0",
+    version="1.1.0",
 )
 
 
@@ -163,14 +167,32 @@ class EvaluateRequest(BaseModel):
     session_id: str | None = None
 
 
+# --- Phase 7: Automated Public-Legal-Data Ingestion --------------------------
+class CourtListenerIngestRequest(BaseModel):
+    query: str
+    jurisdiction: str | None = None  # optional court id, e.g. 'ca9', 'scotus'
+    limit: int = 5
+
+
+class GovinfoIngestRequest(BaseModel):
+    query: str | None = None       # free-text govinfo search ...
+    collection: str | None = None  # ... and/or a collection code (USCODE/CFR/PLAW/BILLS)
+    limit: int = 5
+
+
+class DatasetIngestRequest(BaseModel):
+    dataset_id: str
+    source: str = "huggingface"
+
+
 # --- Routes ------------------------------------------------------------------
 @app.get("/api/health")
 def health() -> dict:
     return {
         "status": "ok",
         "service": "L.E.A.D.S.",
-        "phase": 6,
-        "version": "1.0.0",
+        "phase": 7,
+        "version": "1.1.0",
         "llm_providers": llm_router.available_providers(),
         "corpus_size": rag.get_collection().count(),
         "courtlistener": courtlistener.availability(),
@@ -452,4 +474,78 @@ def sandbox_evaluate(
     if "error" in out:
         raise HTTPException(status_code=400, detail=out["error"])
     out["session_id"] = sid
+    return out
+
+
+# --- Phase 7: Automated Public-Legal-Data Ingestion (MasterBuildPlan §3.8) ----
+# GUARDRAIL-CRITICAL feature. Corpus expansion pulls ONLY from official public
+# legal-data APIs (CourtListener v4, govinfo.gov) — honest User-Agent, sane rate
+# limits, no scraping / CAPTCHA / proxy / rate-limit evasion, PUBLIC legal data
+# only (no PII / people-search). See ingest.py + dataset_discovery.py docstrings.
+@app.post("/api/ingest/courtlistener")
+def ingest_courtlistener_route(req: CourtListenerIngestRequest) -> dict:
+    """
+    Bulk-ingest the top-N CourtListener opinions for a query (optionally scoped to
+    a jurisdiction court id) into the shared RAG corpus. Official v4 API only;
+    dedupes by citation/url (idempotent). Returns added / skipped_dupes /
+    corpus_size_before / corpus_size_after.
+    """
+    if not req.query.strip():
+        raise HTTPException(status_code=400, detail="query is required")
+    _enforce_len(req.query, "query")
+    return ingest.ingest_courtlistener(
+        req.query.strip(),
+        jurisdiction=(req.jurisdiction or "").strip() or None,
+        limit=req.limit,
+    )
+
+
+@app.post("/api/ingest/govinfo")
+def ingest_govinfo_route(req: GovinfoIngestRequest) -> dict:
+    """
+    Ingest U.S. Code / CFR / public-law / bill text from govinfo.gov (official
+    api.govinfo.gov API) by query and/or collection code. Uses a free
+    api.data.gov key (GOVINFO_API_KEY/DATA_GOV_API_KEY), falling back to the
+    rate-limited DEMO_KEY (noted in the response). Dedupes by package id.
+    """
+    if not (req.query and req.query.strip()) and not (req.collection and req.collection.strip()):
+        raise HTTPException(status_code=400, detail="provide a query or a collection code")
+    _enforce_len(req.query or "", "query")
+    return ingest.ingest_govinfo(
+        query=(req.query or "").strip() or None,
+        collection=(req.collection or "").strip() or None,
+        limit=req.limit,
+    )
+
+
+@app.get("/api/ingest/status")
+def ingest_status_route() -> dict:
+    """Corpus stats: total chunks, sources breakdown, and last-ingest summary."""
+    return ingest.status()
+
+
+@app.get("/api/datasets/discover")
+def datasets_discover_route(q: str = "legal", limit: int = 12) -> dict:
+    """
+    Discover PUBLIC LEGAL datasets on Hugging Face Hub (+ Kaggle if creds exist) —
+    official listing APIs, no scraping. Each result carries an is_pii_risk flag;
+    people / PII datasets are flagged so they can be skipped.
+    """
+    _enforce_len(q, "q")
+    return dataset_discovery.discover(query=q, limit=limit)
+
+
+@app.post("/api/datasets/ingest")
+def datasets_ingest_route(req: DatasetIngestRequest) -> dict:
+    """
+    Pull a SMALL streamed sample of a chosen PUBLIC LEGAL dataset into the corpus
+    (or register its metadata if the optional 'datasets' lib is unavailable).
+    REFUSES any PII-risk / people-search dataset.
+    """
+    if not req.dataset_id.strip():
+        raise HTTPException(status_code=400, detail="dataset_id is required")
+    _enforce_len(req.dataset_id, "dataset_id")
+    out = dataset_discovery.ingest_dataset(req.dataset_id.strip(), source=req.source.strip() or "huggingface")
+    if "error" in out:
+        raise HTTPException(status_code=400, detail=out["error"])
     return out

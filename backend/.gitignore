@@ -24,6 +24,9 @@ uploads/
 # .gitignore; duplicated here as defense-in-depth.
 bkt_state/
 
+# Phase 7: registered public-dataset metadata (local aux store; never published)
+datasets_store/
+
 # Server logs
 server.log
 *.log
