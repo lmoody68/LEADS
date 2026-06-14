@@ -50,6 +50,7 @@ from app.services import (  # noqa: E402
     rag,
     reranker,
     sandbox,
+    study,
     tutor,
 )
 
@@ -222,6 +223,36 @@ class TrainRequest(BaseModel):
 
 class ClassifyRequest(BaseModel):
     text: str
+
+
+# --- Phase 8: Study Mode -----------------------------------------------------
+class FlashcardsRequest(BaseModel):
+    topic: str | None = None
+    text: str | None = None
+    count: int = 8
+
+
+class HypoRequest(BaseModel):
+    topic: str | None = None
+
+
+class HypoEvalRequest(BaseModel):
+    facts: str
+    answer: str
+
+
+class CiteRequest(BaseModel):
+    input: str
+
+
+class SimilarRequest(BaseModel):
+    text: str
+    k: int = 6
+    opinions_only: bool = True
+
+
+class OutlineRequest(BaseModel):
+    topic: str
 
 
 # --- Routes ------------------------------------------------------------------
@@ -793,6 +824,64 @@ def classifier_predict_route(req: ClassifyRequest) -> dict:
     if "error" in out:
         raise HTTPException(status_code=400, detail=out["error"])
     return out
+
+
+# --- Phase 8: Study Mode (general-purpose learning + practice toolkit) --------
+@app.post("/api/study/flashcards")
+def study_flashcards_route(req: FlashcardsRequest) -> dict:
+    """Auto-generate study flashcards from a topic or pasted text."""
+    _enforce_len(req.text or "", "text")
+    _enforce_len(req.topic or "", "topic")
+    out = study.flashcards(topic=req.topic or "", text=req.text or "", count=req.count)
+    if "error" in out:
+        raise HTTPException(status_code=400, detail=out["error"])
+    return out
+
+
+@app.post("/api/study/hypo")
+def study_hypo_route(req: HypoRequest | None = None) -> dict:
+    """Generate a fictional issue-spotter fact pattern for a doctrinal topic."""
+    topic = (req.topic if req else "") or ""
+    _enforce_len(topic, "topic")
+    return study.hypo(topic=topic)
+
+
+@app.post("/api/study/hypo/evaluate")
+def study_hypo_eval_route(req: HypoEvalRequest) -> dict:
+    """Grade a learner's spotted issues against a fact pattern."""
+    _enforce_len(req.facts, "facts")
+    _enforce_len(req.answer, "answer")
+    out = study.evaluate_hypo(req.facts, req.answer)
+    if "error" in out:
+        raise HTTPException(status_code=400, detail=out["error"])
+    return out
+
+
+@app.post("/api/study/cite")
+def study_cite_route(req: CiteRequest) -> dict:
+    """Format a rough citation / case name / statute into Bluebook style."""
+    if not req.input.strip():
+        raise HTTPException(status_code=400, detail="input is required")
+    _enforce_len(req.input, "input")
+    return study.cite(req.input.strip())
+
+
+@app.post("/api/study/similar")
+def study_similar_route(req: SimilarRequest) -> dict:
+    """Related authorities: semantic search over the corpus for similar passages/cases."""
+    if not req.text.strip():
+        raise HTTPException(status_code=400, detail="text is required")
+    _enforce_len(req.text, "text")
+    return study.similar(req.text.strip(), k=req.k, opinions_only=req.opinions_only)
+
+
+@app.post("/api/study/outline")
+def study_outline_route(req: OutlineRequest) -> dict:
+    """Generate a study outline for a legal topic."""
+    if not req.topic.strip():
+        raise HTTPException(status_code=400, detail="topic is required")
+    _enforce_len(req.topic, "topic")
+    return study.outline(req.topic.strip())
 
 
 @app.post("/api/classifier/publish")

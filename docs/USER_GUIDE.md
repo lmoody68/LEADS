@@ -64,6 +64,22 @@ Two modes:
   Analysis · Holding.
   - **Example:** *"Heintz v. Jenkins, 514 U.S. 291"* → full brief.
 
+### 📚 Study Mode — learning & practice toolkit
+Free, public-data study tools (general-purpose — students, paralegals,
+self-represented, anyone). Five sub-modes:
+- **Flashcards** — enter a topic or paste text → auto term/holding cards (tap to flip).
+- **Issue-Spotter** — get a fictional fact pattern → list the issues you spot →
+  *Grade my answer* (score + found/missed + coaching) or *Reveal model answer*.
+- **Bluebook Cite** — paste a rough citation → formatted Bluebook (e.g.
+  *"heintz v jenkins 514 us 291 1995"* → *Heintz v. Jenkins, 514 U.S. 291 (1995)*).
+- **Related Authorities** — paste a holding/issue → semantic "find similar cases"
+  over the corpus (the free analog of a research service's related-cases).
+- **Study Outline** — a topic → a structured outline (elements, rules, exceptions).
+
+> Not a substitute for Westlaw / LexisNexis / Bloomberg — those are paid,
+> licensed services. Study Mode rebuilds their *student-facing capabilities* on
+> free public data. Verify citations against the current Bluebook and primary sources.
+
 ### ⚖️ Compliance Advisor
 Describe an investigative scenario → permissible-purpose verdict + governing
 statutes (FCRA/FDCPA/DPPA/GLBA) + restrictions + risk flags + **lawful

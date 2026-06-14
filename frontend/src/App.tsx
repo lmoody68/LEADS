@@ -8,12 +8,14 @@ import DataView from "./views/DataView";
 import ExplainView from "./views/ExplainView";
 import ClassifierView from "./views/ClassifierView";
 import GuideView from "./views/GuideView";
+import StudyView from "./views/StudyView";
 
 type Tab =
   | "guide"
   | "research"
   | "memo"
   | "explain"
+  | "study"
   | "compliance"
   | "document"
   | "tutor"
@@ -47,6 +49,12 @@ const TABS: { id: Tab; label: string; blurb: string }[] = [
     label: "Explain",
     blurb:
       "Layman's-terms transcriber: paste legal jargon or a citation and get it rewritten in plain English for a juror (glossary, analogy, bottom line) — or a structured IRAC case brief.",
+  },
+  {
+    id: "study",
+    label: "Study Mode",
+    blurb:
+      "A general-purpose learning toolkit: flashcards, issue-spotter hypos with grading, a Bluebook citation formatter, related-authorities search, and study outlines — built on free public legal data.",
   },
   {
     id: "compliance",
@@ -128,6 +136,8 @@ export default function App() {
             <MemoView />
           ) : tab === "explain" ? (
             <ExplainView />
+          ) : tab === "study" ? (
+            <StudyView />
           ) : tab === "compliance" ? (
             <ComplianceView />
           ) : tab === "document" ? (

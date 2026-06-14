@@ -296,6 +296,90 @@ export function classifierPublish(): Promise<PublishResult> {
   return post<PublishResult>("/classifier/publish", {});
 }
 
+// --- Phase 8: Study Mode ----------------------------------------------------
+export interface Flashcard {
+  front: string;
+  back: string;
+}
+export interface FlashcardsResult {
+  cards: Flashcard[];
+  provider: string;
+  note?: string;
+  disclaimer: string;
+}
+export interface HypoIssue {
+  issue: string;
+  rule: string;
+  analysis: string;
+}
+export interface HypoResult {
+  area: string;
+  facts: string;
+  model_issues: HypoIssue[];
+  provider: string;
+  note?: string;
+  disclaimer: string;
+}
+export interface HypoEvalResult {
+  score_0_100: number;
+  found: string[];
+  missed: string[];
+  feedback: string;
+  provider: string;
+  disclaimer: string;
+}
+export interface CiteResult {
+  bluebook: string;
+  type: string;
+  components: Record<string, string>;
+  notes: string;
+  provider: string;
+  disclaimer: string;
+}
+export interface SimilarItem {
+  citation: string;
+  title: string;
+  doc_type: string;
+  url: string;
+  snippet: string;
+  relevance: number;
+}
+export interface SimilarResult {
+  results: SimilarItem[];
+  note?: string;
+  disclaimer?: string;
+}
+export interface OutlineSection {
+  heading: string;
+  points: string[];
+}
+export interface OutlineResult {
+  topic: string;
+  sections: OutlineSection[];
+  provider: string;
+  note?: string;
+  disclaimer: string;
+}
+
+export function studyFlashcards(input: { topic?: string; text?: string; count?: number }): Promise<FlashcardsResult> {
+  return post<FlashcardsResult>("/study/flashcards", input);
+}
+export function studyHypo(topic?: string): Promise<HypoResult> {
+  return post<HypoResult>("/study/hypo", { topic: topic || undefined });
+}
+export function studyHypoEvaluate(facts: string, answer: string): Promise<HypoEvalResult> {
+  return post<HypoEvalResult>("/study/hypo/evaluate", { facts, answer });
+}
+export function studyCite(input: string): Promise<CiteResult> {
+  return post<CiteResult>("/study/cite", { input });
+}
+export function studySimilar(text: string, k = 6, opinionsOnly = true): Promise<SimilarResult> {
+  return post<SimilarResult>("/study/similar", { text, k, opinions_only: opinionsOnly });
+}
+export function studyOutline(topic: string): Promise<OutlineResult> {
+  return post<OutlineResult>("/study/outline", { topic });
+}
+
 export interface CredibilityInput {
   source_id?: string;
   title?: string;

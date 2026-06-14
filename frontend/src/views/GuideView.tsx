@@ -77,6 +77,27 @@ const SECTIONS: Section[] = [
     note: "Great for prepping a juror, a student, or a non-lawyer. Case Brief works from a citation like 'Heintz v. Jenkins, 514 U.S. 291'.",
   },
   {
+    id: "study",
+    icon: "📚",
+    tab: "Study Mode",
+    title: "Study Mode — learning & practice toolkit",
+    what:
+      "Five free study tools built on public legal data: Flashcards (auto term/holding cards), Issue-Spotter (a fact pattern you analyze, then get graded), Bluebook Cite formatter, Related Authorities (semantic 'find similar cases'), and Study Outlines.",
+    steps: [
+      "Pick a sub-mode: Flashcards · Issue-Spotter · Bluebook Cite · Related & Outline.",
+      "Flashcards: enter a topic or paste text → tap a card to flip term/answer.",
+      "Issue-Spotter: get a hypo, type the issues you spot, then 'Grade my answer' or 'Reveal model answer'.",
+      "Bluebook Cite: paste a rough citation → get it formatted. Related: paste a holding → similar cases.",
+    ],
+    example: {
+      label: "Drill issue-spotting",
+      input: "Issue-Spotter, topic 'FDCPA third-party contact' → read the fact pattern → list the issues → Grade.",
+      result:
+        "A fictional hypo, a score out of 100, what you found vs. missed, coaching feedback, and a reveal of the model issues.",
+    },
+    note: "General learning aid (students, paralegals, self-represented, anyone) — not legal advice. Cite formatting should be verified against the current Bluebook.",
+  },
+  {
     id: "compliance",
     icon: "⚖️",
     tab: "Compliance Advisor",
