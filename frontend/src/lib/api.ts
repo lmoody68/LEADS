@@ -286,6 +286,15 @@ export function classifierTrain(): Promise<ClassifierMetrics> {
 export function classifierPredict(text: string): Promise<PredictResult> {
   return post<PredictResult>("/classifier/predict", { text });
 }
+export interface PublishResult {
+  repo_id: string;
+  url: string;
+  files: string[];
+  private: boolean;
+}
+export function classifierPublish(): Promise<PublishResult> {
+  return post<PublishResult>("/classifier/publish", {});
+}
 
 export interface CredibilityInput {
   source_id?: string;

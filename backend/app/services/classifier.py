@@ -24,6 +24,7 @@ score on a class the model barely saw.
 from __future__ import annotations
 
 import json
+import os
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -205,6 +206,137 @@ def _load_model() -> Any:
         except Exception:
             _model_cache = None
     return _model_cache
+
+
+def _model_card(meta: Dict[str, Any], repo_id: str) -> str:
+    """Generate an honest HF model card (README.md) from the training metrics."""
+    classes = ", ".join(meta.get("classes", []))
+    h = meta.get("holdout", {})
+    cv = meta.get("cross_val", {})
+    per_class = meta.get("per_class", {})
+    rows = "\n".join(
+        f"| {c} | {v['precision']} | {v['recall']} | {v['f1']} | {v['support']} |"
+        for c, v in per_class.items()
+    )
+    excluded = meta.get("excluded_classes", {})
+    excl_line = (
+        f"\nClasses excluded (too few samples, <{meta.get('min_per_class')}): "
+        + ", ".join(f"{c} ({n})" for c, n in excluded.items())
+        if excluded else ""
+    )
+    return f"""---
+license: other
+library_name: sklearn
+tags:
+- legal
+- text-classification
+- scikit-learn
+- l-e-a-d-s
+---
+
+# {repo_id.split('/')[-1]} — Auxiliary Legal Document-Type Classifier
+
+Part of **L.E.A.D.S.** (Legal Education & Analytical Deep-Search). This is an
+**auxiliary metadata tagger**: it predicts a legal document's *type* —
+**{classes}** — from sentence embeddings.
+
+- **Features:** `sentence-transformers/all-MiniLM-L6-v2` embeddings (384-d, ONNX — no torch).
+- **Head:** scikit-learn `LogisticRegression` (`class_weight="balanced"`).
+- **Training data:** the PUBLIC L.E.A.D.S. legal corpus (CourtListener opinions,
+  govinfo statutes, Federal Register / eCFR regulations, Congress bills). **No PII.**
+- **Samples:** {meta.get('n_samples')} · **Features:** {meta.get('n_features')}-d
+
+## Metrics (honest — held-out test split + 5-fold cross-validation)
+
+| Metric | Value |
+|---|---|
+| Held-out accuracy | {h.get('accuracy')} |
+| Held-out macro-F1 | {h.get('macro_f1')} |
+| 5-fold CV macro-F1 | {cv.get('macro_f1_mean')} ± {cv.get('macro_f1_std')} |
+
+| class | precision | recall | F1 | test support |
+|---|---|---|---|---|
+{rows}
+{excl_line}
+
+## Usage
+
+```python
+import joblib, numpy as np
+from huggingface_hub import hf_hub_download
+from sentence_transformers import SentenceTransformer  # or any all-MiniLM-L6-v2 encoder
+
+clf = joblib.load(hf_hub_download("{repo_id}", "doctype_clf.joblib"))
+enc = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+X = enc.encode(["The debt collector shall not communicate with third parties..."])
+print(clf.predict(np.asarray(X)))
+```
+
+## ⚠️ Disclaimer
+
+This model classifies document **type** only. It is **NOT legal advice**, **not a
+model of the law**, and must never be used to answer legal questions. Trained on
+public legal text for educational/portfolio purposes.
+
+*Auto-generated model card. Trained {meta.get('trained_at')}.*
+"""
+
+
+def publish(repo_id: Optional[str] = None, private: bool = False) -> Dict[str, Any]:
+    """
+    Push the trained model + an honest auto-generated model card to the Hugging
+    Face Hub. Needs a WRITE-scoped token (HF_WRITE_TOKEN, else HF_TOKEN if it has
+    write access). Graceful {error} if untrained / no write token / push fails.
+    """
+    meta = _load_meta()
+    if not meta or not _MODEL_PATH.exists():
+        return {"error": "No trained model to publish — train the classifier first."}
+
+    token = (os.getenv("HF_WRITE_TOKEN") or os.getenv("HF_TOKEN") or "").strip()
+    if not token:
+        return {"error": "No Hugging Face token configured. Set HF_WRITE_TOKEN (write scope) in .env."}
+
+    try:
+        from huggingface_hub import HfApi
+        from huggingface_hub.utils import HfHubHTTPError
+    except Exception as exc:
+        return {"error": f"huggingface_hub unavailable: {exc}"}
+
+    api = HfApi(token=token)
+    try:
+        user = api.whoami()
+        namespace = user.get("name") or "user"
+    except Exception as exc:
+        return {"error": f"HF token invalid: {exc}"}
+
+    repo_id = (repo_id or f"{namespace}/leads-doctype-classifier").strip()
+
+    try:
+        api.create_repo(repo_id=repo_id, repo_type="model", private=private, exist_ok=True)
+        # Write the model card next to the model, then upload both.
+        readme = _MODELS_DIR / "README.md"
+        readme.write_text(_model_card(meta, repo_id), encoding="utf-8")
+        api.upload_file(path_or_fileobj=str(_MODEL_PATH), path_in_repo="doctype_clf.joblib",
+                        repo_id=repo_id, repo_type="model")
+        api.upload_file(path_or_fileobj=str(readme), path_in_repo="README.md",
+                        repo_id=repo_id, repo_type="model")
+        api.upload_file(path_or_fileobj=str(_META_PATH), path_in_repo="metrics.json",
+                        repo_id=repo_id, repo_type="model")
+    except HfHubHTTPError as exc:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        if status in (401, 403):
+            return {"error": "HF token lacks WRITE permission — create a write-scoped token "
+                    "(huggingface.co/settings/tokens) and set HF_WRITE_TOKEN."}
+        return {"error": f"HF push failed (HTTP {status}): {exc}"}
+    except Exception as exc:
+        return {"error": f"HF push failed: {exc}"}
+
+    return {
+        "repo_id": repo_id,
+        "url": f"https://huggingface.co/{repo_id}",
+        "files": ["doctype_clf.joblib", "README.md", "metrics.json"],
+        "private": private,
+    }
 
 
 def predict(text: str) -> Dict[str, Any]:

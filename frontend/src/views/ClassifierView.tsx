@@ -3,8 +3,10 @@ import {
   classifierStatus,
   classifierTrain,
   classifierPredict,
+  classifierPublish,
   type ClassifierMetrics,
   type PredictResult,
+  type PublishResult,
 } from "../lib/api";
 
 export default function ClassifierView() {
@@ -16,6 +18,23 @@ export default function ClassifierView() {
   const [predicting, setPredicting] = useState(false);
   const [pred, setPred] = useState<PredictResult | null>(null);
   const [predErr, setPredErr] = useState<string | null>(null);
+
+  const [publishing, setPublishing] = useState(false);
+  const [published, setPublished] = useState<PublishResult | null>(null);
+  const [pubErr, setPubErr] = useState<string | null>(null);
+
+  async function publish() {
+    setPublishing(true);
+    setPubErr(null);
+    setPublished(null);
+    try {
+      setPublished(await classifierPublish());
+    } catch (e) {
+      setPubErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPublishing(false);
+    }
+  }
 
   useEffect(() => {
     classifierStatus().then(setMetrics).catch(() => {});
@@ -70,10 +89,34 @@ export default function ClassifierView() {
         >
           {training ? "Training…" : trained ? "Retrain on current corpus" : "Train classifier"}
         </button>
+        {trained && (
+          <button
+            onClick={() => void publish()}
+            disabled={publishing}
+            className="rounded-lg border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+          >
+            {publishing ? "Publishing…" : "🤗 Publish to HF Hub"}
+          </button>
+        )}
         {metrics?.trained_at && (
           <span className="text-xs text-slate-400">last trained: {metrics.trained_at}</span>
         )}
       </div>
+
+      {pubErr && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+          {pubErr}
+        </div>
+      )}
+      {published && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+          Published to{" "}
+          <a href={published.url} target="_blank" rel="noopener noreferrer" className="font-medium underline">
+            {published.repo_id}
+          </a>{" "}
+          ({published.files.join(", ")}).
+        </div>
+      )}
 
       {err && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div>}
 

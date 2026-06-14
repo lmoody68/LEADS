@@ -793,3 +793,16 @@ def classifier_predict_route(req: ClassifyRequest) -> dict:
     if "error" in out:
         raise HTTPException(status_code=400, detail=out["error"])
     return out
+
+
+@app.post("/api/classifier/publish")
+def classifier_publish_route() -> dict:
+    """
+    Publish the trained model + an honest auto-generated model card to the
+    Hugging Face Hub. Requires a WRITE-scoped HF token (HF_WRITE_TOKEN). Returns
+    the repo URL, or 400 with guidance if untrained / no write token / push fails.
+    """
+    out = classifier.publish()
+    if "error" in out:
+        raise HTTPException(status_code=400, detail=out["error"])
+    return out
