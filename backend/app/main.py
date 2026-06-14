@@ -20,9 +20,10 @@ GUARDRAILS (NON-NEGOTIABLE — baked into the design):
 from __future__ import annotations
 
 import os
+import uuid
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -31,22 +32,35 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 
 from app.services import (  # noqa: E402
     agent_memo,
+    bkt,
     casefile,
     compliance,
     courtlistener,
     credibility,
     llm_router,
     rag,
+    sandbox,
+    tutor,
 )
 
 app = FastAPI(
     title="L.E.A.D.S. API",
     description=(
-        "Legal Education & Analytical Deep-Search — Phase 3 "
-        "(Source-Credibility Scorer + Compliance & Ethics Advisor)"
+        "Legal Education & Analytical Deep-Search — Phase 4 "
+        "(BKT Investigative-Methodology Tutor + Practice Sandbox)"
     ),
-    version="0.4.0",
+    version="0.5.0",
 )
+
+
+def _session_id(x_session_id: str | None, body_session_id: str | None = None) -> str:
+    """
+    Resolve the BKT session id: prefer the X-Session-Id header, then a body field,
+    else mint a fresh one. The chosen id is echoed back to the client so the
+    frontend can persist it and keep its mastery profile across requests.
+    """
+    sid = (x_session_id or body_session_id or "").strip()
+    return sid or "sess-" + uuid.uuid4().hex[:16]
 
 # In-memory memo history (last N). Process-local, never persisted/published —
 # consistent with the "everything stays local" guardrail.
@@ -102,14 +116,37 @@ class CredibilityRequest(BaseModel):
     text: str | None = None
 
 
+# --- Phase 4: BKT Tutor + Practice Sandbox -----------------------------------
+class KcRequest(BaseModel):
+    kc: str
+    session_id: str | None = None  # optional fallback if no X-Session-Id header
+
+
+class AnswerRequest(BaseModel):
+    kc: str
+    question_id: str
+    answer: object  # int (mc option index) or str (short answer)
+    session_id: str | None = None
+
+
+class ScenarioRequest(BaseModel):
+    session_id: str | None = None
+
+
+class EvaluateRequest(BaseModel):
+    scenario_id: str
+    approach: str
+    session_id: str | None = None
+
+
 # --- Routes ------------------------------------------------------------------
 @app.get("/api/health")
 def health() -> dict:
     return {
         "status": "ok",
         "service": "L.E.A.D.S.",
-        "phase": 3,
-        "version": "0.4.0",
+        "phase": 4,
+        "version": "0.5.0",
         "llm_providers": llm_router.available_providers(),
         "corpus_size": rag.get_collection().count(),
         "courtlistener": courtlistener.availability(),
@@ -239,3 +276,100 @@ def casefile_ask(req: CaseAskRequest) -> dict:
 def casefile_entities(collection_id: str) -> dict:
     """Entity outline for an uploaded collection."""
     return {"collection_id": collection_id, "entities": casefile.get_entities(collection_id)}
+
+
+# --- Phase 4: BKT Investigative-Methodology Tutor (MasterBuildPlan §3.4) ------
+@app.get("/api/tutor/curriculum")
+def tutor_curriculum() -> dict:
+    """The 5 curriculum modules and their knowledge components (no session state)."""
+    return tutor.get_curriculum()
+
+
+@app.post("/api/tutor/lesson")
+def tutor_lesson(req: KcRequest) -> dict:
+    """Generate an LLM lesson for one knowledge component (free-first router)."""
+    if not req.kc.strip():
+        raise HTTPException(status_code=400, detail="kc is required")
+    out = tutor.generate_lesson(req.kc.strip())
+    if "error" in out:
+        raise HTTPException(status_code=404, detail=out["error"])
+    return out
+
+
+@app.post("/api/tutor/quiz")
+def tutor_quiz(req: KcRequest) -> dict:
+    """Generate a quiz (mc + short) for a KC. Answer keys stay server-side."""
+    if not req.kc.strip():
+        raise HTTPException(status_code=400, detail="kc is required")
+    out = tutor.generate_quiz(req.kc.strip())
+    if "error" in out:
+        raise HTTPException(status_code=404, detail=out["error"])
+    return out
+
+
+@app.post("/api/tutor/answer")
+def tutor_answer(
+    req: AnswerRequest,
+    x_session_id: str | None = Header(default=None, alias="X-Session-Id"),
+) -> dict:
+    """
+    Grade one answer, run the Bayesian Knowledge Tracing update, and return
+    {correct, feedback, mastery_before, mastery_after, recommended_next}.
+    """
+    if not req.kc.strip() or not req.question_id.strip():
+        raise HTTPException(status_code=400, detail="kc and question_id are required")
+    sid = _session_id(x_session_id, req.session_id)
+    out = tutor.grade(sid, req.kc.strip(), req.question_id.strip(), req.answer)
+    if "error" in out:
+        raise HTTPException(status_code=400, detail=out["error"])
+    out["session_id"] = sid
+    return out
+
+
+@app.get("/api/tutor/mastery")
+def tutor_mastery(
+    x_session_id: str | None = Header(default=None, alias="X-Session-Id"),
+    session_id: str | None = None,
+) -> dict:
+    """Per-session BKT mastery profile (red/yellow/green by KC + overall %)."""
+    sid = _session_id(x_session_id, session_id)
+    profile = bkt.get_profile(sid)
+    profile["recommended_next"] = bkt.recommend_next(sid)
+    return profile
+
+
+# --- Phase 4: Practice Sandbox (MasterBuildPlan §3.6) ------------------------
+@app.post("/api/sandbox/scenario")
+def sandbox_scenario(
+    req: ScenarioRequest | None = None,
+    x_session_id: str | None = Header(default=None, alias="X-Session-Id"),
+) -> dict:
+    """
+    Generate a CLEARLY-SYNTHETIC, FICTIONAL investigative scenario (no real PII)
+    for the learner to practice the Golden Search Strategy.
+    """
+    sid = _session_id(x_session_id, req.session_id if req else None)
+    out = sandbox.generate_scenario()
+    out["session_id"] = sid
+    return out
+
+
+@app.post("/api/sandbox/evaluate")
+def sandbox_evaluate(
+    req: EvaluateRequest,
+    x_session_id: str | None = Header(default=None, alias="X-Session-Id"),
+) -> dict:
+    """
+    Evaluate the learner's submitted research APPROACH (methodology) against a
+    synthetic scenario → scored feedback + per-KC BKT mastery updates.
+    """
+    if not req.scenario_id.strip():
+        raise HTTPException(status_code=400, detail="scenario_id is required")
+    if not req.approach.strip():
+        raise HTTPException(status_code=400, detail="approach is required")
+    sid = _session_id(x_session_id, req.session_id)
+    out = sandbox.evaluate(sid, req.scenario_id.strip(), req.approach)
+    if "error" in out:
+        raise HTTPException(status_code=400, detail=out["error"])
+    out["session_id"] = sid
+    return out

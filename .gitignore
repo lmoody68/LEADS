@@ -17,6 +17,9 @@
 **/server.log
 **/*.log
 
+# BKT per-session mastery state (Phase 4) — local only, anonymous, never published
+**/bkt_state/
+
 # Node / Vite
 **/node_modules/
 **/dist/

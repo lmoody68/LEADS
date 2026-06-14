@@ -3,8 +3,9 @@ import ResearchView from "./views/ResearchView";
 import MemoView from "./views/MemoView";
 import ComplianceView from "./views/ComplianceView";
 import DocumentView from "./views/DocumentView";
+import TutorView from "./views/TutorView";
 
-type Tab = "research" | "memo" | "compliance" | "document";
+type Tab = "research" | "memo" | "compliance" | "document" | "tutor";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("research");
@@ -58,6 +59,16 @@ export default function App() {
             >
               Document Analysis
             </button>
+            <button
+              onClick={() => setTab("tutor")}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                tab === "tutor"
+                  ? "bg-white text-indigo-700 shadow-sm"
+                  : "text-slate-600 hover:text-slate-800"
+              }`}
+            >
+              Tutor
+            </button>
           </nav>
         </div>
       </header>
@@ -70,8 +81,10 @@ export default function App() {
             <MemoView />
           ) : tab === "compliance" ? (
             <ComplianceView />
-          ) : (
+          ) : tab === "document" ? (
             <DocumentView />
+          ) : (
+            <TutorView />
           )}
         </div>
         <p className="mt-4 text-center text-xs text-slate-400">

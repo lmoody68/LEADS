@@ -207,6 +207,219 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// --- Phase 4: BKT Tutor + Practice Sandbox ----------------------------------
+// A stable per-browser session id keys the learner's BKT mastery profile.
+const SESSION_KEY = "leads_session_id";
+export function getSessionId(): string {
+  let sid = localStorage.getItem(SESSION_KEY);
+  if (!sid) {
+    sid = "sess-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem(SESSION_KEY, sid);
+  }
+  return sid;
+}
+
+async function tutorPost<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Session-Id": getSessionId() },
+    body: JSON.stringify(body ?? {}),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => res.statusText);
+    throw new Error(`${res.status}: ${detail}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+async function tutorGet<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { "X-Session-Id": getSessionId() },
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => res.statusText);
+    throw new Error(`${res.status}: ${detail}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export interface CurriculumKc {
+  kc_id: string;
+  name: string;
+  description: string;
+}
+export interface CurriculumModule {
+  module: string;
+  kcs: CurriculumKc[];
+}
+export interface Curriculum {
+  modules: CurriculumModule[];
+  total_kcs: number;
+  mastery_threshold: number;
+}
+
+export interface Lesson {
+  kc_id: string;
+  kc_name: string;
+  module: string;
+  summary: string;
+  key_points: string[];
+  worked_example: string;
+  pitfalls: string[];
+  takeaway: string;
+  provider: string;
+}
+
+export interface QuizQuestion {
+  question_id: string;
+  type: "mc" | "short";
+  prompt: string;
+  options?: string[];
+}
+export interface Quiz {
+  kc_id: string;
+  kc_name: string;
+  module: string;
+  questions: QuizQuestion[];
+  provider: string;
+}
+
+export interface RecommendedKc {
+  kc_id: string;
+  name: string;
+  module: string;
+  p_mastery: number;
+  color: string;
+}
+export interface GradeResult {
+  kc_id: string;
+  question_id: string;
+  type: "mc" | "short";
+  correct: boolean;
+  feedback: string;
+  mastery_before: number;
+  mastery_after: number;
+  level: string;
+  color: string;
+  mastered: boolean;
+  recommended_next: RecommendedKc | null;
+  session_id: string;
+}
+
+export interface MasteryKc {
+  kc_id: string;
+  name: string;
+  module: string;
+  description: string;
+  p_mastery: number;
+  level: string;
+  color: "red" | "yellow" | "green" | string;
+  mastered: boolean;
+  attempts: number;
+  correct: number;
+  incorrect: number;
+}
+export interface MasteryModule {
+  module: string;
+  avg_mastery: number;
+  color: string;
+  mastered_count: number;
+  kc_count: number;
+  kcs: MasteryKc[];
+}
+export interface MasteryProfile {
+  session_id: string;
+  overall_readiness_percent: number;
+  overall_color: string;
+  mastered_kcs: number;
+  total_kcs: number;
+  total_attempts: number;
+  mastery_threshold: number;
+  modules: MasteryModule[];
+  recommended_next: RecommendedKc | null;
+}
+
+export function getCurriculum(): Promise<Curriculum> {
+  return tutorGet<Curriculum>("/tutor/curriculum");
+}
+export function getLesson(kc: string): Promise<Lesson> {
+  return tutorPost<Lesson>("/tutor/lesson", { kc });
+}
+export function getQuiz(kc: string): Promise<Quiz> {
+  return tutorPost<Quiz>("/tutor/quiz", { kc });
+}
+export function submitAnswer(
+  kc: string,
+  questionId: string,
+  answer: number | string
+): Promise<GradeResult> {
+  return tutorPost<GradeResult>("/tutor/answer", {
+    kc,
+    question_id: questionId,
+    answer,
+  });
+}
+export function getMastery(): Promise<MasteryProfile> {
+  return tutorGet<MasteryProfile>("/tutor/mastery");
+}
+
+export interface SandboxSource {
+  name: string;
+  type: string;
+  reliability: string;
+  note: string;
+}
+export interface Scenario {
+  scenario_id: string;
+  synthetic: boolean;
+  synthetic_banner: string;
+  title: string;
+  objective: string;
+  lawful_purpose: string;
+  known_facts: string[];
+  available_sources: SandboxSource[];
+  assessed_kcs: { kc_id: string; name: string }[];
+  provider: string;
+  session_id: string;
+}
+
+export interface SandboxMasteryUpdate {
+  kc_id: string;
+  kc_name: string;
+  dimension: string;
+  dimension_score: number;
+  mastery_before: number;
+  mastery_after: number;
+  color: string;
+}
+export interface SandboxEvaluation {
+  scenario_id: string;
+  scores: Record<string, number>;
+  overall: number;
+  did_well: string[];
+  could_improve: string[];
+  compliance_flags: string[];
+  verdict: "pass" | "needs_work" | string;
+  ideal_approach: string[];
+  mastery_updates: SandboxMasteryUpdate[];
+  recommended_next: RecommendedKc | null;
+  provider: string;
+  session_id: string;
+}
+
+export function getScenario(): Promise<Scenario> {
+  return tutorPost<Scenario>("/sandbox/scenario", {});
+}
+export function evaluateApproach(
+  scenarioId: string,
+  approach: string
+): Promise<SandboxEvaluation> {
+  return tutorPost<SandboxEvaluation>("/sandbox/evaluate", {
+    scenario_id: scenarioId,
+    approach,
+  });
+}
+
 export function ask(question: string, deep = true): Promise<AnswerResponse> {
   return post<AnswerResponse>("/ask", { question, deep });
 }
