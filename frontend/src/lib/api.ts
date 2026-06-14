@@ -47,6 +47,68 @@ export interface AnswerResponse {
   ingested?: IngestedCase[];
 }
 
+// --- Phase 2: Agentic Research Memo ----------------------------------------
+export interface MemoSource {
+  n: number;
+  source_title: string;
+  citation: string;
+  doc_type?: string;
+  court?: string;
+  date?: string;
+  url?: string;
+  legal_section?: string;
+  snippet: string;
+  score: number;
+  cited: boolean;
+}
+
+export interface MemoSection {
+  title: string;
+  body: string;
+  confidence: "high" | "medium" | "low" | string;
+}
+
+export interface MemoResponse {
+  question: string;
+  deep: boolean;
+  plan: string[];
+  subq_sources: Record<string, number[]>;
+  memo_markdown: string;
+  sections: MemoSection[];
+  sources: MemoSource[];
+  findings: string[];
+  conflicts: string[];
+  gaps: string[];
+  reviewer_notes: string[];
+  citer_notes: string[];
+  grounding: string;
+  provider: string;
+  providers: Record<string, string>;
+  ingested: IngestedCase[];
+}
+
+export interface MemoHistoryEntry {
+  question: string;
+  deep: boolean;
+  plan: string[];
+  provider: string;
+  n_sources: number;
+  memo_markdown: string;
+}
+
+export function generateMemo(question: string, deep = true): Promise<MemoResponse> {
+  return post<MemoResponse>("/memo", { question, deep });
+}
+
+export async function memoHistory(limit = 10): Promise<{ history: MemoHistoryEntry[]; total: number }> {
+  const res = await fetch(`${API_BASE}/memo/history?limit=${limit}`);
+  if (!res.ok) {
+    const detail = await res.text().catch(() => res.statusText);
+    throw new Error(`${res.status}: ${detail}`);
+  }
+  return res.json();
+}
+
 export interface Entities {
   people: string[];
   organizations: string[];

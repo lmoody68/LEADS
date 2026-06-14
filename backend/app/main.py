@@ -29,13 +29,18 @@ from pydantic import BaseModel
 # Load .env from the backend root (explicit path so it works under `-m app.main`).
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 
-from app.services import casefile, courtlistener, llm_router, rag  # noqa: E402
+from app.services import agent_memo, casefile, courtlistener, llm_router, rag  # noqa: E402
 
 app = FastAPI(
     title="L.E.A.D.S. API",
-    description="Legal Education & Analytical Deep-Search — Phase 1 (Deep-Research Engine)",
-    version="0.2.0",
+    description="Legal Education & Analytical Deep-Search — Phase 2 (Agentic Research Memo)",
+    version="0.3.0",
 )
+
+# In-memory memo history (last N). Process-local, never persisted/published —
+# consistent with the "everything stays local" guardrail.
+_MEMO_HISTORY: list[dict] = []
+_MEMO_HISTORY_MAX = 20
 
 _origins = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173").split(",")
 app.add_middleware(
@@ -68,13 +73,18 @@ class CaseAskRequest(BaseModel):
     collection_id: str
 
 
+class MemoRequest(BaseModel):
+    question: str
+    deep: bool = True  # True = also pull live CourtListener case law per sub-question
+
+
 # --- Routes ------------------------------------------------------------------
 @app.get("/api/health")
 def health() -> dict:
     return {
         "status": "ok",
         "service": "L.E.A.D.S.",
-        "phase": 1,
+        "phase": 2,
         "llm_providers": llm_router.available_providers(),
         "corpus_size": rag.get_collection().count(),
         "courtlistener": courtlistener.availability(),
@@ -94,6 +104,44 @@ def ask(req: AskRequest) -> dict:
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="question is required")
     return rag.answer(req.question, deep=req.deep)
+
+
+@app.post("/api/memo")
+def memo(req: MemoRequest) -> dict:
+    """
+    Agentic Research Memo (MasterBuildPlan §3.2). Runs the multi-step agent —
+    Planner -> Retriever -> Synthesizer -> Drafter -> Citer -> Reviewer — and
+    returns a structured legal research memo with inline citations to REAL
+    retrieved sources (seeded statutes + live CourtListener opinions), the
+    sub-question plan, conflicts, and a reviewer self-check.
+
+    NOTE: this makes several LLM + retrieval calls and can legitimately take
+    20-60s (especially with deep=True pulling live case law per sub-question).
+    """
+    if not req.question.strip():
+        raise HTTPException(status_code=400, detail="question is required")
+    result = agent_memo.generate_memo(req.question, deep=req.deep)
+    # Record a compact entry in the in-memory history.
+    _MEMO_HISTORY.append(
+        {
+            "question": result.get("question", ""),
+            "deep": result.get("deep", req.deep),
+            "plan": result.get("plan", []),
+            "provider": result.get("provider", ""),
+            "n_sources": len(result.get("sources", [])),
+            "memo_markdown": result.get("memo_markdown", ""),
+        }
+    )
+    if len(_MEMO_HISTORY) > _MEMO_HISTORY_MAX:
+        del _MEMO_HISTORY[: len(_MEMO_HISTORY) - _MEMO_HISTORY_MAX]
+    return result
+
+
+@app.get("/api/memo/history")
+def memo_history(limit: int = 10) -> dict:
+    """Return the last N memo requests (in-memory, newest last)."""
+    limit = max(1, min(limit, _MEMO_HISTORY_MAX))
+    return {"history": _MEMO_HISTORY[-limit:], "total": len(_MEMO_HISTORY)}
 
 
 @app.post("/api/casefile/upload")

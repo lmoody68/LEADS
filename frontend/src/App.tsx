@@ -1,8 +1,9 @@
 import { useState } from "react";
 import ResearchView from "./views/ResearchView";
+import MemoView from "./views/MemoView";
 import DocumentView from "./views/DocumentView";
 
-type Tab = "research" | "document";
+type Tab = "research" | "memo" | "document";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("research");
@@ -27,6 +28,16 @@ export default function App() {
               Research
             </button>
             <button
+              onClick={() => setTab("memo")}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                tab === "memo"
+                  ? "bg-white text-indigo-700 shadow-sm"
+                  : "text-slate-600 hover:text-slate-800"
+              }`}
+            >
+              Research Memo
+            </button>
+            <button
               onClick={() => setTab("document")}
               className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
                 tab === "document"
@@ -42,7 +53,13 @@ export default function App() {
 
       <main className="mx-auto max-w-4xl px-4 py-6">
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          {tab === "research" ? <ResearchView /> : <DocumentView />}
+          {tab === "research" ? (
+            <ResearchView />
+          ) : tab === "memo" ? (
+            <MemoView />
+          ) : (
+            <DocumentView />
+          )}
         </div>
         <p className="mt-4 text-center text-xs text-slate-400">
           Public/licensed legal data only · Uploaded documents stay local · General legal
