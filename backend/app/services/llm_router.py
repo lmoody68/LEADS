@@ -1,11 +1,11 @@
 """
 LLM Router — free-first multi-provider cascade for L.E.A.D.S.
 
-Cascade order: Groq -> Cerebras -> Gemini -> Claude (Anthropic). Keys are read
-from the environment (GROQ_API_KEY / CEREBRAS_API_KEY / GEMINI_API_KEY /
-ANTHROPIC_API_KEY). Cerebras (OpenAI-compatible, fast, free tier) sits second so
-that when Groq's daily token cap is hit there is another quick free provider
-before Gemini's throttling / the paid Anthropic tier.
+Cascade order: Groq -> Cerebras -> Mistral -> Gemini -> Claude (Anthropic). Keys
+are read from the environment (GROQ_API_KEY / CEREBRAS_API_KEY / MISTRAL_API_KEY
+/ GEMINI_API_KEY / ANTHROPIC_API_KEY). The three OpenAI-compatible free
+providers (Groq, Cerebras, Mistral) lead so that when one's daily/rate cap is
+hit another free provider takes over before Gemini's throttling / paid Anthropic.
 
 GUARDRAIL: This router is a thin pass-through. It sends only the prompt the
 caller built (a citation-grounded question over retrieved public/licensed legal
@@ -37,6 +37,7 @@ logger = logging.getLogger("leads.llm_router")
 # Sensible free-tier defaults; overridable via env.
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 CEREBRAS_MODEL = os.getenv("CEREBRAS_MODEL", "gpt-oss-120b")
+MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 # Anthropic default is a low-cost Haiku model (aligns with .env.example). The
 # Anthropic tier is last in the cascade and only reached if the free providers
@@ -88,6 +89,8 @@ def available_providers() -> list[str]:
         out.append("groq")
     if os.getenv("CEREBRAS_API_KEY"):
         out.append("cerebras")
+    if os.getenv("MISTRAL_API_KEY"):
+        out.append("mistral")
     if os.getenv("GEMINI_API_KEY"):
         out.append("gemini")
     if os.getenv("ANTHROPIC_API_KEY"):
@@ -127,6 +130,14 @@ def _call_cerebras(system: str, user: str) -> str:
     return _openai_chat(
         "https://api.cerebras.ai/v1/chat/completions",
         os.environ["CEREBRAS_API_KEY"], CEREBRAS_MODEL, system, user,
+    )
+
+
+@_traceable(run_type="llm", name="mistral")
+def _call_mistral(system: str, user: str) -> str:
+    return _openai_chat(
+        "https://api.mistral.ai/v1/chat/completions",
+        os.environ["MISTRAL_API_KEY"], MISTRAL_MODEL, system, user,
     )
 
 
@@ -180,6 +191,7 @@ def _call_anthropic(system: str, user: str) -> str:
 _PROVIDERS = {
     "groq": _call_groq,
     "cerebras": _call_cerebras,
+    "mistral": _call_mistral,
     "gemini": _call_gemini,
     "anthropic": _call_anthropic,
 }
@@ -190,7 +202,7 @@ def synthesize(system: str, user: str) -> Tuple[Optional[str], str]:
     """
     Run the free-first cascade. Returns (answer_text, provider_label).
 
-    On success: (text, "groq" | "gemini" | "anthropic").
+    On success: (text, "groq" | "cerebras" | "mistral" | "gemini" | "anthropic").
     On total failure or no keys: (None, "extractive (no LLM key)") so the
     caller can fall back to an extractive, still-cited answer.
     """
@@ -219,6 +231,7 @@ def _model_for(name: str) -> str:
     return {
         "groq": GROQ_MODEL,
         "cerebras": CEREBRAS_MODEL,
+        "mistral": MISTRAL_MODEL,
         "gemini": GEMINI_MODEL,
         "anthropic": ANTHROPIC_MODEL,
     }.get(name, "?")

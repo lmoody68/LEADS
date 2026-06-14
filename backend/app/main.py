@@ -665,6 +665,31 @@ def ingest_recap_route(req: GovDataIngestRequest) -> dict:
     return govdata.ingest_recap(req.query.strip(), limit=req.limit)
 
 
+@app.post("/api/ingest/oyez")
+def ingest_oyez_route(req: GovDataIngestRequest) -> dict:
+    """
+    Ingest a SCOTUS term's cases (plain-language facts/question/conclusion) from
+    Oyez. KEYLESS. Query = a term YEAR (e.g. '2019'); Oyez has no keyword search.
+    """
+    if not req.query.strip():
+        raise HTTPException(status_code=400, detail="query (a SCOTUS term year) is required")
+    _enforce_len(req.query, "query")
+    return govdata.ingest_oyez(req.query.strip(), limit=req.limit)
+
+
+@app.post("/api/ingest/fbi_cde")
+def ingest_fbi_cde_route(req: GovDataIngestRequest) -> dict:
+    """
+    Ingest a text summary of FBI Crime Data Explorer AGGREGATE national arrest
+    statistics (query = offense slug, e.g. 'violent_crime'; optional 'YYYY-YYYY'
+    range). Uses the api.data.gov key. Aggregate numbers only — no individual records.
+    """
+    if not req.query.strip():
+        raise HTTPException(status_code=400, detail="query (an offense slug) is required")
+    _enforce_len(req.query, "query")
+    return govdata.ingest_fbi_cde(req.query.strip(), limit=req.limit)
+
+
 # --- Phase 8: Real citation network (MasterBuildPlan §3.3 enhancement) --------
 @app.post("/api/citator")
 def citator_route(req: CitatorRequest) -> dict:

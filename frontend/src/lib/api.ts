@@ -591,7 +591,9 @@ export type GovDataEndpoint =
   | "congress"
   | "regulations"
   | "openstates"
-  | "recap";
+  | "recap"
+  | "oyez"
+  | "fbi_cde";
 
 export function ingestGovData(
   endpoint: GovDataEndpoint,

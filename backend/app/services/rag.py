@@ -255,15 +255,33 @@ def _tokenize(text: str) -> List[str]:
     return _TOKEN_RE.findall(text.lower())
 
 
-def _bm25_ranked(query: str, col, pool: int) -> List[Tuple[str, Dict[str, Any], float]]:
-    """Sparse BM25 retrieval over the WHOLE collection -> ranked top `pool`."""
-    got = col.get()  # all docs + metadata
+# Cache the (expensive) BM25 index + tokenized corpus per collection, rebuilt
+# only when the collection's chunk count changes. Without this, every query
+# re-fetched the whole collection and re-tokenized it — O(N) per query, which
+# grows as the corpus expands. Process-local; the corpus only grows via ingest
+# (count increases), so a count-keyed cache invalidates correctly.
+_BM25_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
+def _bm25_index(col):
+    name = getattr(col, "name", "default")
+    count = col.count()
+    cached = _BM25_CACHE.get(name)
+    if cached and cached["count"] == count:
+        return cached["docs"], cached["metas"], cached["bm25"]
+    got = col.get()  # all docs + metadata (the expensive call we now cache)
     docs = got.get("documents", []) or []
     metas = got.get("metadatas", []) or []
-    if not docs:
+    bm25 = BM25Okapi([_tokenize(d) for d in docs]) if docs else None
+    _BM25_CACHE[name] = {"count": count, "docs": docs, "metas": metas, "bm25": bm25}
+    return docs, metas, bm25
+
+
+def _bm25_ranked(query: str, col, pool: int) -> List[Tuple[str, Dict[str, Any], float]]:
+    """Sparse BM25 retrieval over the WHOLE collection -> ranked top `pool` (cached index)."""
+    docs, metas, bm25 = _bm25_index(col)
+    if not docs or bm25 is None:
         return []
-    tokenized_corpus = [_tokenize(d) for d in docs]
-    bm25 = BM25Okapi(tokenized_corpus)
     scores = bm25.get_scores(_tokenize(query))
     ranked_idx = sorted(range(len(docs)), key=lambda i: scores[i], reverse=True)[:pool]
     return [(docs[i], metas[i], float(scores[i])) for i in ranked_idx if scores[i] > 0]

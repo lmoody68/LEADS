@@ -733,3 +733,230 @@ def ingest_recap(query: str, limit: int = 5) -> Dict[str, Any]:
             ingested_meta.append({"title": case_name, "citation": citation, "court": court, "url": web_url})
 
     return _finish("recap", query, col, size_before, new_docs, ingested_meta, skipped, note=note)
+
+
+# =============================================================================
+# Oyez — Supreme Court case summaries (KEYLESS, oyez.org)
+# =============================================================================
+# Oyez provides plain-language SCOTUS summaries (facts / question / conclusion) —
+# excellent for the layman's-terms transcriber + tutor. NOTE: the Oyez API does
+# NOT support full-text keyword search, so this ingests a SCOTUS TERM by YEAR
+# (e.g. "2019"); a non-year input returns an honest note. doc_type='opinion'.
+_OYEZ_BASE = "https://api.oyez.org"
+
+
+def ingest_oyez(query: str, limit: int = 5) -> Dict[str, Any]:
+    limit = _clamp(limit)
+    col = rag.get_collection(rag.LEGAL_COLLECTION)
+    size_before = col.count()
+
+    year = (query or "").strip()
+    if not re.fullmatch(r"(19|20)\d{2}", year):
+        return _empty(
+            "oyez", query, size_before,
+            "Oyez's API has no keyword search — enter a SCOTUS TERM YEAR (e.g. 2019) to "
+            "ingest that term's cases. For topic search use CourtListener.",
+        )
+
+    existing = _existing_source_keys()
+    skipped = 0
+    new_docs: List[Dict[str, Any]] = []
+    ingested_meta: List[Dict[str, Any]] = []
+
+    with httpx.Client() as client:
+        resp = _get(client, f"{_OYEZ_BASE}/cases?{httpx.QueryParams({'filter': f'term:{year}', 'per_page': limit})}")
+        if resp is None:
+            return _empty("oyez", query, size_before, "Oyez returned no data (network/rate-limit).")
+        try:
+            cases = resp.json()
+        except Exception:
+            return _empty("oyez", query, size_before, "Oyez returned malformed JSON.")
+        if not isinstance(cases, list):
+            cases = []
+
+        for case in cases[:limit]:
+            href = (case.get("href") or "").strip()
+            name = (case.get("name") or "SCOTUS case").strip()
+            cite = case.get("citation") or {}
+            if isinstance(cite, dict) and cite.get("volume"):
+                page = cite.get("page") or "___"  # some cases have a volume but no page yet
+                citation = f"{cite.get('volume')} U.S. {page} ({cite.get('year', year)})"
+            else:
+                citation = f"{name} ({year})"
+            key = _norm_key(citation) or _norm_key(href)
+            if key and key in existing:
+                skipped += 1
+                continue
+
+            # Fetch the detail for facts / question / conclusion.
+            facts = question = conclusion = ""
+            if href:
+                d = _get(client, href)
+                if d is not None:
+                    try:
+                        det = d.json()
+                        facts = _clean(_oyez_text(det.get("facts_of_the_case")))
+                        question = _clean(_oyez_text(det.get("question")))
+                        conclusion = _clean(_oyez_text(det.get("conclusion")))
+                    except Exception:
+                        pass
+            description = _clean(_oyez_text(case.get("description")))
+            parts = [f"{name}.", description]
+            if facts:
+                parts.append(f"Facts: {facts}")
+            if question:
+                parts.append(f"Question: {question}")
+            if conclusion:
+                parts.append(f"Conclusion: {conclusion}")
+            text = "\n\n".join(p for p in parts if p and p.strip())
+            if len(text.strip()) < 30:
+                skipped += 1
+                continue
+            existing.add(key)
+
+            web_url = (case.get("justia_url") or "").strip() or href
+            new_docs.append(
+                {
+                    "id": "oyez_" + re.sub(r"[^a-zA-Z0-9]+", "_", citation)[:60],
+                    "source_title": name,
+                    "citation": citation,
+                    "section": "Supreme Court of the United States",
+                    "doc_type": "opinion",
+                    "court": "Supreme Court of the United States",
+                    "date": str((cite.get("year") if isinstance(cite, dict) else "") or year),
+                    "url": web_url,
+                    "text": text[:60000],
+                }
+            )
+            ingested_meta.append({"title": name, "citation": citation, "url": web_url})
+
+    return _finish("oyez", query, col, size_before, new_docs, ingested_meta, skipped)
+
+
+def _oyez_text(val: Any) -> str:
+    """Oyez fields can be a string or a {'plain_text'|'html'} dict."""
+    if isinstance(val, dict):
+        return val.get("plain_text") or val.get("html") or ""
+    return val if isinstance(val, str) else ""
+
+
+# =============================================================================
+# FBI Crime Data Explorer — AGGREGATE crime statistics (api.data.gov key)
+# =============================================================================
+# CDE serves AGGREGATE, published crime/arrest statistics — never individual
+# records. Ingested as a readable text summary for criminal-justice CONTEXT in
+# the research/education workflow. doc_type='statistic'. This is NOT case law or
+# a person-lookup; it is national-level numbers only.
+_CDE_BASE = "https://api.usa.gov/crime/fbi/cde"
+_CDE_DEFAULT_FROM = "01-2019"
+_CDE_DEFAULT_TO = "12-2022"
+
+
+def ingest_fbi_cde(query: str, limit: int = 5) -> Dict[str, Any]:
+    """
+    Ingest a text SUMMARY of FBI CDE national ARREST statistics. query = an
+    offense ID ('all' is always available; other IDs per cde.ucr.cjis.gov) with
+    an optional 'YYYY-YYYY' range. Falls back to ALL-offenses national totals if
+    the requested offense isn't served. `limit` unused. AGGREGATE numbers only.
+    """
+    col = rag.get_collection(rag.LEGAL_COLLECTION)
+    size_before = col.count()
+    key = _data_gov_key()
+
+    # Parse an optional YYYY-YYYY range; offense = the remaining words, slugified.
+    yrs = re.findall(r"(19|20)\d{2}", query or "")
+    rng = re.search(r"((?:19|20)\d{2})\s*[-–]\s*((?:19|20)\d{2})", query or "")
+    if rng:
+        frm, to = f"01-{rng.group(1)}", f"12-{rng.group(2)}"
+        offense_raw = re.sub(r"((?:19|20)\d{2})\s*[-–]\s*((?:19|20)\d{2})", "", query).strip()
+    else:
+        frm, to = _CDE_DEFAULT_FROM, _CDE_DEFAULT_TO
+        offense_raw = re.sub(r"\b(19|20)\d{2}\b", "", query or "").strip()
+    offense = re.sub(r"\s+", "_", offense_raw.lower()) or "all"
+
+    def _fetch(client: httpx.Client, off: str) -> Optional[Dict[str, Any]]:
+        url = f"{_CDE_BASE}/arrest/national/{off}?{httpx.QueryParams({'from': frm, 'to': to, 'type': 'counts', 'API_KEY': key})}"
+        resp = _get(client, url)
+        if resp is None:
+            return None
+        try:
+            data = resp.json()
+        except Exception:
+            return None
+        return data if (data.get("rates") or data.get("actuals")) else None
+
+    note = ""
+    with httpx.Client() as client:
+        data = _fetch(client, offense)
+        # The national arrest endpoint only serves a documented set of offense IDs;
+        # if the requested one isn't available, fall back to ALL-offenses national
+        # totals (honest note) rather than failing.
+        if data is None and offense != "all":
+            data = _fetch(client, "all")
+            if data is not None:
+                note = (f"Offense '{offense}' isn't available at the national arrest level "
+                        "(see cde.ucr.cjis.gov for valid offense IDs); showing ALL-offenses national totals.")
+                offense = "all"
+        if data is None:
+            return _empty("fbi_cde", query, size_before,
+                          f"FBI CDE returned no data for '{offense}' ({frm}–{to}). Try offense 'all' "
+                          "or a different year range.")
+
+        citation = f"FBI CDE national arrests · {offense} · {frm}–{to}"
+        existing = _existing_source_keys()
+        if _norm_key(citation) in existing:
+            return _empty("fbi_cde", query, size_before, f"{citation} already in the corpus.")
+
+        text = _summarize_cde(offense, frm, to, data)
+        if not text:
+            return _empty("fbi_cde", query, size_before, f"No usable CDE series for '{offense}'.")
+
+        web_url = "https://cde.ucr.cjis.gov/"
+        new_docs = [{
+            "id": "cde_" + re.sub(r"[^a-zA-Z0-9]+", "_", f"{offense}_{frm}_{to}")[:60],
+            "source_title": f"FBI CDE — national arrests: {offense} ({frm}–{to})",
+            "citation": citation,
+            "section": "FBI Crime Data Explorer (aggregate statistics)",
+            "doc_type": "statistic",
+            "court": "",
+            "date": to,
+            "url": web_url,
+            "text": text,
+        }]
+        ingested_meta = [{"title": new_docs[0]["source_title"], "citation": citation, "url": web_url}]
+
+    return _finish("fbi_cde", query, col, size_before, new_docs, ingested_meta, 0, note=note)
+
+
+def _summarize_cde(offense: str, frm: str, to: str, data: Dict[str, Any]) -> str:
+    """Turn the CDE rates/actuals time series into a concise per-year text summary."""
+    lines = [
+        f"FBI Crime Data Explorer — national ARREST statistics for offense '{offense}', {frm} to {to}.",
+        "AGGREGATE, published national numbers only — NOT individual records, NOT case law.",
+    ]
+
+    def _by_year(series: Dict[str, Any]) -> Dict[str, list]:
+        years: Dict[str, list] = {}
+        for period, val in (series or {}).items():
+            m = re.match(r"\d{2}-((?:19|20)\d{2})", str(period))
+            if m and isinstance(val, (int, float)):
+                years.setdefault(m.group(1), []).append(float(val))
+        return years
+
+    rates = data.get("rates") or {}
+    actuals = data.get("actuals") or {}
+    for label, series in list(rates.items())[:1]:  # the primary "United States Arrests" rate series
+        yb = _by_year(series)
+        if yb:
+            lines.append(f"\nArrest rate per 100,000 ({label}), yearly average:")
+            for yr in sorted(yb):
+                vals = yb[yr]
+                lines.append(f"  {yr}: {round(sum(vals)/len(vals), 1)} (avg over {len(vals)} months)")
+    for label, series in list(actuals.items())[:1]:
+        yb = _by_year(series)
+        if yb:
+            lines.append(f"\nEstimated arrest counts ({label}), yearly total:")
+            for yr in sorted(yb):
+                lines.append(f"  {yr}: {int(sum(yb[yr])):,}")
+    lines.append("\nSource: FBI Crime Data Explorer (cde.ucr.cjis.gov), via api.usa.gov.")
+    return "\n".join(lines) if len(lines) > 3 else ""

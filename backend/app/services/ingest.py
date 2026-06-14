@@ -498,8 +498,13 @@ def status() -> Dict[str, Any]:
             doc_type = meta.get("doc_type", "statute") or "statute"
             cite = (meta.get("citation") or "").lower()
             url = (meta.get("url") or "").lower()
-            if doc_type == "docket":
+            chunk_id = (meta.get("chunk_id") or "").lower()
+            if doc_type == "statistic":
+                bucket = "fbi cde (crime stats)"
+            elif doc_type == "docket":
                 bucket = "recap (court dockets)"
+            elif chunk_id.startswith("oyez_") or "oyez.org" in url:
+                bucket = "oyez (SCOTUS summaries)"
             elif doc_type == "opinion" or "courtlistener.com" in url:
                 bucket = "courtlistener (case law)"
             elif "federalregister.gov" in url or cite.startswith("fed. reg"):

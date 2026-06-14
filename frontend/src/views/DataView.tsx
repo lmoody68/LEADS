@@ -66,6 +66,16 @@ const SOURCES: Record<
     placeholder: "Query — e.g. FDCPA attorney debt collection",
     hint: "Federal court dockets/filings via CourtListener RECAP (public PACER records).",
   },
+  oyez: {
+    label: "Oyez (SCOTUS summaries)",
+    placeholder: "A SCOTUS term YEAR — e.g. 2019",
+    hint: "Plain-language Supreme Court facts/question/conclusion. No keyword search — enter a term year.",
+  },
+  fbi_cde: {
+    label: "FBI CDE (crime stats)",
+    placeholder: "Offense ID — e.g. all  (optional range, e.g. 2019-2022)",
+    hint: "Aggregate national arrest statistics (no individual records); 'all' always works. api.data.gov.",
+  },
 };
 
 export default function DataView() {
@@ -196,7 +206,8 @@ export default function DataView() {
           Grow the legal corpus from <strong>official public-data APIs only</strong> — case law
           (CourtListener), statutes (govinfo), regulations (Federal Register, eCFR), federal
           legislation (Congress.gov), state legislation (OpenStates), rulemaking dockets
-          (Regulations.gov), and federal court dockets (RECAP) — check citations against the{" "}
+          (Regulations.gov), federal court dockets (RECAP), SCOTUS summaries (Oyez), and aggregate
+          crime statistics (FBI CDE) — check citations against the{" "}
           <strong>real CourtListener citation network</strong>, and discover{" "}
           <strong>public legal datasets</strong> (Hugging Face Hub). No scraping, no bot-protection /
           rate-limit evasion, and <strong>no PII / people-search data</strong> — PII datasets are
