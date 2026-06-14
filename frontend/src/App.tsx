@@ -5,8 +5,9 @@ import ComplianceView from "./views/ComplianceView";
 import DocumentView from "./views/DocumentView";
 import TutorView from "./views/TutorView";
 import DataView from "./views/DataView";
+import ExplainView from "./views/ExplainView";
 
-type Tab = "research" | "memo" | "compliance" | "document" | "tutor" | "data";
+type Tab = "research" | "memo" | "explain" | "compliance" | "document" | "tutor" | "data";
 
 // One source of truth for the tab nav: label + a one-line "what this does" blurb
 // shown under the header. Keeps the nav consistent and gives every tab a clear
@@ -23,6 +24,12 @@ const TABS: { id: Tab; label: string; blurb: string }[] = [
     label: "Research Memo",
     blurb:
       "Agentic multi-step memo: Planner → Retriever → Synthesizer → Drafter → Citer → Reviewer produces a structured legal memo with inline citations to real sources.",
+  },
+  {
+    id: "explain",
+    label: "Explain",
+    blurb:
+      "Layman's-terms transcriber: paste legal jargon or a citation and get it rewritten in plain English for a juror (glossary, analogy, bottom line) — or a structured IRAC case brief.",
   },
   {
     id: "compliance",
@@ -62,7 +69,7 @@ export default function App() {
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold tracking-tight text-indigo-700">L.E.A.D.S.</h1>
               <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600">
-                v1.0
+                v1.2
               </span>
             </div>
             <p className="text-xs text-slate-500">Legal Education &amp; Analytical Deep-Search</p>
@@ -94,6 +101,8 @@ export default function App() {
             <ResearchView />
           ) : tab === "memo" ? (
             <MemoView />
+          ) : tab === "explain" ? (
+            <ExplainView />
           ) : tab === "compliance" ? (
             <ComplianceView />
           ) : tab === "document" ? (

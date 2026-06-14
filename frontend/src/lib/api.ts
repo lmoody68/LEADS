@@ -195,6 +195,58 @@ export function checkCitator(citation: string): Promise<CitatorResult> {
   return post<CitatorResult>("/citator", { citation });
 }
 
+// --- Phase 8: Explain — layman's transcriber + IRAC case brief --------------
+export interface ExplainInput {
+  citation?: string;
+  text?: string;
+  source_id?: string;
+}
+export interface GlossaryItem {
+  term: string;
+  meaning: string;
+}
+export interface ExplainResult {
+  title?: string;
+  citation?: string;
+  plain_transcription: string;
+  overview: string;
+  glossary: GlossaryItem[];
+  step_by_step: string[];
+  why_it_matters: string;
+  analogy: string;
+  bottom_line: string;
+  source_excerpt?: string;
+  url?: string;
+  provider: string;
+  note?: string;
+  disclaimer: string;
+}
+export interface CaseBriefResult {
+  case_name: string;
+  citation: string;
+  facts: string;
+  procedural_history: string;
+  issues: string[];
+  rule: string;
+  analysis: string;
+  holding: string;
+  disposition: string;
+  key_quotes: string[];
+  synopsis: string;
+  source_excerpt?: string;
+  url?: string;
+  provider: string;
+  note?: string;
+  disclaimer: string;
+}
+
+export function explainPlain(input: ExplainInput): Promise<ExplainResult> {
+  return post<ExplainResult>("/explain", input);
+}
+export function caseBrief(input: ExplainInput): Promise<CaseBriefResult> {
+  return post<CaseBriefResult>("/brief", input);
+}
+
 export interface CredibilityInput {
   source_id?: string;
   title?: string;

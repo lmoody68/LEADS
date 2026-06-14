@@ -33,6 +33,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 from app.services import (  # noqa: E402
     agent_memo,
     bkt,
+    casebrief,
     casefile,
     citator,
     compliance,
@@ -43,6 +44,7 @@ from app.services import (  # noqa: E402
     govdata,
     ingest,
     llm_router,
+    plainlang,
     rag,
     reranker,
     sandbox,
@@ -204,6 +206,13 @@ class CitatorRequest(BaseModel):
     citation: str  # e.g. "514 U.S. 291" or "Heintz v. Jenkins, 514 U.S. 291"
 
 
+class ExplainRequest(BaseModel):
+    # Supply ANY one: a citation to resolve, pasted legal text, or a corpus source_id.
+    citation: str | None = None
+    text: str | None = None
+    source_id: str | None = None
+
+
 # --- Routes ------------------------------------------------------------------
 @app.get("/api/health")
 def health() -> dict:
@@ -217,6 +226,7 @@ def health() -> dict:
         "courtlistener": courtlistener.availability(),
         "citator": {"available": citator.has_token()},
         "reranker": reranker.status(),
+        "observability": llm_router.observability(),
     }
 
 
@@ -669,3 +679,43 @@ def citator_route(req: CitatorRequest) -> dict:
         raise HTTPException(status_code=400, detail="citation is required")
     _enforce_len(req.citation, "citation")
     return citator.treatment_for_citation(req.citation.strip())
+
+
+# --- Phase 8: Explain — IRAC case brief + layman's-terms transcriber ----------
+def _explain_inputs(req: "ExplainRequest") -> dict:
+    if not (req.citation or req.text or req.source_id):
+        raise HTTPException(status_code=400, detail="provide a citation, text, or source_id")
+    _enforce_len(req.text or "", "text")
+    _enforce_len(req.citation or "", "citation")
+    return {
+        "citation": (req.citation or "").strip() or None,
+        "text": (req.text or "").strip() or None,
+        "source_id": (req.source_id or "").strip() or None,
+    }
+
+
+@app.post("/api/brief")
+def brief_route(req: ExplainRequest) -> dict:
+    """
+    AI Case Brief (IRAC): turn an opinion (from a citation, pasted text, or a
+    corpus source_id) into facts / issue / rule / analysis / holding /
+    disposition / key quotes / synopsis. Extractive fallback with no LLM key.
+    """
+    out = casebrief.brief(**_explain_inputs(req))
+    if "error" in out:
+        raise HTTPException(status_code=404, detail=out["error"])
+    return out
+
+
+@app.post("/api/explain")
+def explain_route(req: ExplainRequest) -> dict:
+    """
+    Layman's-terms transcriber: translate legal jargon / a case / a statute into
+    plain English for a juror — plain transcription, glossary, step-by-step, why
+    it matters, an everyday analogy, and a bottom line. Built-in glossary
+    fallback with no LLM key.
+    """
+    out = plainlang.explain(**_explain_inputs(req))
+    if "error" in out:
+        raise HTTPException(status_code=404, detail=out["error"])
+    return out

@@ -12,6 +12,9 @@ huggingface_hub
 # Phase 8 — cross-encoder reranker (ONNX via onnxruntime; NO torch). Graceful:
 # the app still runs if this is absent (retrieval falls back to RRF order).
 fastembed
+# Phase 8 — LangSmith LLM observability (OPTIONAL; tracing only when
+# LANGSMITH_API_KEY is set). The router degrades to a no-op if this is absent.
+langsmith
 # OPTIONAL Phase 7 deps — lazy/guarded imports; the app boots fine WITHOUT them.
 #   datasets : stream a small sample of a public legal dataset into the corpus.
 #   kaggle   : discover Kaggle legal datasets (only if kaggle.json creds present).

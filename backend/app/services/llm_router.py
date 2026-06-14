@@ -1,13 +1,22 @@
 """
 LLM Router — free-first multi-provider cascade for L.E.A.D.S.
 
-Cascade order: Groq -> Gemini -> Claude (Anthropic). Keys are read from the
-environment (GROQ_API_KEY / GEMINI_API_KEY / ANTHROPIC_API_KEY).
+Cascade order: Groq -> Cerebras -> Gemini -> Claude (Anthropic). Keys are read
+from the environment (GROQ_API_KEY / CEREBRAS_API_KEY / GEMINI_API_KEY /
+ANTHROPIC_API_KEY). Cerebras (OpenAI-compatible, fast, free tier) sits second so
+that when Groq's daily token cap is hit there is another quick free provider
+before Gemini's throttling / the paid Anthropic tier.
 
 GUARDRAIL: This router is a thin pass-through. It sends only the prompt the
 caller built (a citation-grounded question over retrieved public/licensed legal
 passages, or user-uploaded case-file text). No provider is asked to train on,
 retain, or learn from any data — these are stateless completion calls.
+
+OBSERVABILITY: every provider call + the cascade entrypoint are wrapped with
+LangSmith's @traceable. Tracing is OFF unless LANGSMITH_API_KEY is set (then it
+auto-enables); if the `langsmith` package is absent the decorator degrades to a
+no-op. No prompt content is logged locally — traces go only to the user's own
+LangSmith project when they opt in with a key.
 
 CRITICAL DESIGN POINT: if NO provider key is configured, or every configured
 provider fails, `synthesize()` returns (None, "extractive (no LLM key)"). The
@@ -27,9 +36,10 @@ logger = logging.getLogger("leads.llm_router")
 
 # Sensible free-tier defaults; overridable via env.
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+CEREBRAS_MODEL = os.getenv("CEREBRAS_MODEL", "gpt-oss-120b")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 # Anthropic default is a low-cost Haiku model (aligns with .env.example). The
-# Anthropic tier is last in the cascade and only reached if Groq + Gemini both
+# Anthropic tier is last in the cascade and only reached if the free providers
 # fail, so the default favors COST. Override with ANTHROPIC_MODEL for a stronger
 # model. (claude-3-5-haiku-latest tracks the current Haiku release.)
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-latest")
@@ -37,11 +47,47 @@ ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-latest")
 _TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 
 
+# --- Observability (LangSmith) ----------------------------------------------
+# Auto-enable tracing when the user has supplied a key but not the toggle.
+if os.getenv("LANGSMITH_API_KEY") and not os.getenv("LANGSMITH_TRACING"):
+    os.environ["LANGSMITH_TRACING"] = "true"
+os.environ.setdefault("LANGSMITH_PROJECT", os.getenv("LANGSMITH_PROJECT", "leads"))
+
+try:  # langsmith is OPTIONAL — degrade to a no-op decorator if unavailable.
+    from langsmith import traceable as _traceable  # type: ignore
+
+    _LANGSMITH_IMPORTED = True
+except Exception:  # pragma: no cover - import guard
+    _LANGSMITH_IMPORTED = False
+
+    def _traceable(*d_args, **d_kwargs):  # no-op decorator matching @traceable(...)
+        def _wrap(fn):
+            return fn
+
+        # Support both @_traceable and @_traceable(...) usage.
+        if len(d_args) == 1 and callable(d_args[0]) and not d_kwargs:
+            return d_args[0]
+        return _wrap
+
+
+def observability() -> dict:
+    """Tracing status for /api/health (no secrets)."""
+    enabled = bool(os.getenv("LANGSMITH_API_KEY")) and _LANGSMITH_IMPORTED
+    return {
+        "provider": "langsmith",
+        "sdk_installed": _LANGSMITH_IMPORTED,
+        "tracing": enabled,
+        "project": os.getenv("LANGSMITH_PROJECT", "leads") if enabled else None,
+    }
+
+
 def available_providers() -> list[str]:
     """Return the list of providers that have a key configured (cascade order)."""
     out = []
     if os.getenv("GROQ_API_KEY"):
         out.append("groq")
+    if os.getenv("CEREBRAS_API_KEY"):
+        out.append("cerebras")
     if os.getenv("GEMINI_API_KEY"):
         out.append("gemini")
     if os.getenv("ANTHROPIC_API_KEY"):
@@ -49,13 +95,13 @@ def available_providers() -> list[str]:
     return out
 
 
-def _call_groq(system: str, user: str) -> str:
-    key = os.environ["GROQ_API_KEY"]
+def _openai_chat(url: str, key: str, model: str, system: str, user: str) -> str:
+    """Shared OpenAI-compatible chat completion (Groq + Cerebras)."""
     resp = httpx.post(
-        "https://api.groq.com/openai/v1/chat/completions",
+        url,
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
         json={
-            "model": GROQ_MODEL,
+            "model": model,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -68,6 +114,23 @@ def _call_groq(system: str, user: str) -> str:
     return resp.json()["choices"][0]["message"]["content"].strip()
 
 
+@_traceable(run_type="llm", name="groq")
+def _call_groq(system: str, user: str) -> str:
+    return _openai_chat(
+        "https://api.groq.com/openai/v1/chat/completions",
+        os.environ["GROQ_API_KEY"], GROQ_MODEL, system, user,
+    )
+
+
+@_traceable(run_type="llm", name="cerebras")
+def _call_cerebras(system: str, user: str) -> str:
+    return _openai_chat(
+        "https://api.cerebras.ai/v1/chat/completions",
+        os.environ["CEREBRAS_API_KEY"], CEREBRAS_MODEL, system, user,
+    )
+
+
+@_traceable(run_type="llm", name="gemini")
 def _call_gemini(system: str, user: str) -> str:
     key = os.environ["GEMINI_API_KEY"]
     url = (
@@ -89,6 +152,7 @@ def _call_gemini(system: str, user: str) -> str:
     return data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
 
+@_traceable(run_type="llm", name="anthropic")
 def _call_anthropic(system: str, user: str) -> str:
     """Anthropic Messages API via raw HTTP (no SDK dependency in Phase 0)."""
     key = os.environ["ANTHROPIC_API_KEY"]
@@ -115,11 +179,13 @@ def _call_anthropic(system: str, user: str) -> str:
 
 _PROVIDERS = {
     "groq": _call_groq,
+    "cerebras": _call_cerebras,
     "gemini": _call_gemini,
     "anthropic": _call_anthropic,
 }
 
 
+@_traceable(run_type="chain", name="llm_router.synthesize")
 def synthesize(system: str, user: str) -> Tuple[Optional[str], str]:
     """
     Run the free-first cascade. Returns (answer_text, provider_label).
@@ -150,4 +216,9 @@ def synthesize(system: str, user: str) -> Tuple[Optional[str], str]:
 
 
 def _model_for(name: str) -> str:
-    return {"groq": GROQ_MODEL, "gemini": GEMINI_MODEL, "anthropic": ANTHROPIC_MODEL}.get(name, "?")
+    return {
+        "groq": GROQ_MODEL,
+        "cerebras": CEREBRAS_MODEL,
+        "gemini": GEMINI_MODEL,
+        "anthropic": ANTHROPIC_MODEL,
+    }.get(name, "?")
