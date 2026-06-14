@@ -13,6 +13,26 @@ type Section = {
 
 const SECTIONS: Section[] = [
   {
+    id: "assistant",
+    icon: "💬",
+    tab: "Assistant",
+    title: "Assistant — ask anything (agentic orchestrator)",
+    what:
+      "One chat box for the whole app. Ask in plain language and it automatically routes your request to the right tool — research, case brief, plain-English, compliance, citator, related authorities, flashcards, outline, or document type — and answers, showing which tool it used.",
+    steps: [
+      "Type a request (or tap a suggestion chip).",
+      "Read the answer; the 'via <tool>' badge shows which capability it used.",
+      "Keep chatting — it uses recent context.",
+    ],
+    example: {
+      label: "Just ask",
+      input: "“Is it lawful for a landlord to pull a tenant's credit report?”",
+      result:
+        "It routes to the Compliance Advisor and replies: Verdict: yes (FCRA § 1681b) with the conditions — and shows 'via compliance'.",
+    },
+    note: "Best starting point if you're not sure which tab you need. General legal information, not legal advice.",
+  },
+  {
     id: "research",
     icon: "🔎",
     tab: "Research",

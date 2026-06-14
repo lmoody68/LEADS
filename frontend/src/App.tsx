@@ -9,9 +9,11 @@ import ExplainView from "./views/ExplainView";
 import ClassifierView from "./views/ClassifierView";
 import GuideView from "./views/GuideView";
 import StudyView from "./views/StudyView";
+import AssistantView from "./views/AssistantView";
 
 type Tab =
   | "guide"
+  | "assistant"
   | "research"
   | "memo"
   | "explain"
@@ -31,6 +33,12 @@ const TABS: { id: Tab; label: string; blurb: string }[] = [
     label: "Guide",
     blurb:
       "How to use L.E.A.D.S. — what each feature does, step-by-step, with real-world examples you can copy.",
+  },
+  {
+    id: "assistant",
+    label: "Assistant",
+    blurb:
+      "Ask anything in plain language — an agentic orchestrator routes your request to the right tool (research, case brief, plain-English, compliance, citator, related authorities, flashcards, outline, classify) and answers.",
   },
   {
     id: "research",
@@ -130,6 +138,8 @@ export default function App() {
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           {tab === "guide" ? (
             <GuideView />
+          ) : tab === "assistant" ? (
+            <AssistantView />
           ) : tab === "research" ? (
             <ResearchView />
           ) : tab === "memo" ? (

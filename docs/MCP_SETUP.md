@@ -10,8 +10,10 @@ the corpus.
 
 | Tool | What it does |
 |------|--------------|
+| `leads_assistant` | **Agentic orchestrator** — routes a plain-language request to the right tool |
 | `leads_health` | App health + capabilities (providers, corpus size, cache, classifier) |
 | `leads_ask` | Citation-grounded answer over statutes + live case law |
+| `leads_flashcards` / `leads_issue_spotter` / `leads_bluebook` / `leads_related_authorities` / `leads_outline` | Study-mode tools |
 | `leads_research_memo` | Structured agentic IRAC memo with citations |
 | `leads_explain_plain` | Transcribe jargon / a case into plain English |
 | `leads_case_brief` | IRAC case brief (facts/issue/rule/analysis/holding) |

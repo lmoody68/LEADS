@@ -380,6 +380,23 @@ export function studyOutline(topic: string): Promise<OutlineResult> {
   return post<OutlineResult>("/study/outline", { topic });
 }
 
+// --- Phase 8: Assistant (agentic orchestrator) ------------------------------
+export interface AssistantResult {
+  reply: string;
+  tool_used: string;
+  why: string;
+  sources: { citation: string; title: string }[];
+  data: Record<string, unknown>;
+  provider: string;
+  disclaimer: string;
+}
+export function assistantChat(
+  message: string,
+  history: { role: string; content: string }[] = []
+): Promise<AssistantResult> {
+  return post<AssistantResult>("/assistant/chat", { message, history });
+}
+
 export interface CredibilityInput {
   source_id?: string;
   title?: string;

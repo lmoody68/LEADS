@@ -32,6 +32,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 
 from app.services import (  # noqa: E402
     agent_memo,
+    assistant,
     bkt,
     cache,
     casebrief,
@@ -253,6 +254,11 @@ class SimilarRequest(BaseModel):
 
 class OutlineRequest(BaseModel):
     topic: str
+
+
+class AssistantRequest(BaseModel):
+    message: str
+    history: list[dict] | None = None
 
 
 # --- Routes ------------------------------------------------------------------
@@ -821,6 +827,24 @@ def classifier_predict_route(req: ClassifyRequest) -> dict:
         raise HTTPException(status_code=400, detail="text is required")
     _enforce_len(req.text, "text")
     out = classifier.predict(req.text.strip())
+    if "error" in out:
+        raise HTTPException(status_code=400, detail=out["error"])
+    return out
+
+
+# --- Phase 8: Assistant (agentic orchestrator over all tools) -----------------
+@app.post("/api/assistant/chat")
+def assistant_chat_route(req: AssistantRequest) -> dict:
+    """
+    One conversational entry point: routes a natural-language message to the
+    right L.E.A.D.S. tool (research, brief, explain, compliance, citator,
+    similar, flashcards, outline, classify) and returns a unified reply +
+    structured data + which tool was used.
+    """
+    if not req.message.strip():
+        raise HTTPException(status_code=400, detail="message is required")
+    _enforce_len(req.message, "message")
+    out = assistant.chat(req.message.strip(), history=req.history)
     if "error" in out:
         raise HTTPException(status_code=400, detail=out["error"])
     return out

@@ -36,6 +36,15 @@ Open **http://localhost:5173**. The **Guide** tab (in-app) mirrors this document
 
 ## Features
 
+### 💬 Assistant — ask anything (agentic orchestrator)
+One chat box for the whole app. Ask in plain language; it **routes** your request
+to the right tool (research, case brief, plain-English, compliance, citator,
+related authorities, flashcards, outline, classify) and answers, showing a
+**"via &lt;tool&gt;"** badge.
+- **Example:** *"Is it lawful for a landlord to pull a tenant's credit report?"* →
+  routes to Compliance → *Verdict: yes (FCRA § 1681b)…* Best starting point if you
+  don't know which tab you need.
+
 ### 🔎 Research — Deep-Search RAG
 Ask a legal question; get a **cited** answer grounded in real statutes + live
 court opinions, with agreement/conflict detection.

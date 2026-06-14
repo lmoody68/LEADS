@@ -144,6 +144,46 @@ def leads_corpus_status() -> dict:
 
 
 @mcp.tool()
+def leads_assistant(message: str) -> dict:
+    """
+    The agentic orchestrator: send a natural-language request and it routes to the
+    right L.E.A.D.S. tool (research/brief/explain/compliance/citator/similar/
+    flashcards/outline/classify) and returns a unified reply + which tool it used.
+    """
+    return _post("/assistant/chat", {"message": message})
+
+
+@mcp.tool()
+def leads_flashcards(topic: str = "", text: str = "", count: int = 8) -> dict:
+    """Generate study flashcards from a topic or pasted text."""
+    return _post("/study/flashcards", {"topic": topic or None, "text": text or None, "count": count})
+
+
+@mcp.tool()
+def leads_issue_spotter(topic: str = "") -> dict:
+    """Generate a fictional issue-spotter fact pattern (+ model issues) for a doctrinal topic."""
+    return _post("/study/hypo", {"topic": topic or None})
+
+
+@mcp.tool()
+def leads_bluebook(citation_or_details: str) -> dict:
+    """Format a rough citation / case name / statute into Bluebook style."""
+    return _post("/study/cite", {"input": citation_or_details})
+
+
+@mcp.tool()
+def leads_related_authorities(text: str, k: int = 6) -> dict:
+    """Find related authorities: semantic search over the corpus for cases similar to a holding/issue."""
+    return _post("/study/similar", {"text": text, "k": k})
+
+
+@mcp.tool()
+def leads_outline(topic: str) -> dict:
+    """Generate a study outline for a legal topic."""
+    return _post("/study/outline", {"topic": topic})
+
+
+@mcp.tool()
 def leads_ingest(source: str, query: str, limit: int = 5) -> dict:
     """
     Grow the corpus from an official public API. source ∈ {courtlistener, govinfo,
