@@ -33,6 +33,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 from app.services import (  # noqa: E402
     agent_memo,
     bkt,
+    cache,
     casebrief,
     casefile,
     citator,
@@ -238,6 +239,7 @@ def health() -> dict:
         "reranker": reranker.status(),
         "observability": llm_router.observability(),
         "classifier": {"trained": classifier.available()},
+        "cache": cache.status(),
     }
 
 

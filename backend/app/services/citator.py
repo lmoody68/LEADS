@@ -32,7 +32,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from . import ingest  # reuse the vetted on-disk cache helpers (rate-limit friendly)
+from . import cache  # shared cache (Upstash REST, in-memory fallback) — rate-limit friendly
 
 _BASE = "https://www.courtlistener.com"
 _LOOKUP_URL = f"{_BASE}/api/rest/v4/citation-lookup/"
@@ -162,10 +162,11 @@ def treatment_for_citation(citation: str, max_citing: int = 5) -> Dict[str, Any]
     if not has_token():
         return _unavailable("no COURTLISTENER_API_TOKEN configured", citation)
 
-    # Cache successful reports on disk so repeat checks (and the credibility
-    # scorer reusing this) don't re-hit CourtListener's rate-limited API.
+    # Cache successful reports (Upstash if configured, else in-memory) so repeat
+    # checks (and the credibility scorer reusing this) don't re-hit
+    # CourtListener's rate-limited API.
     cache_key = f"citator::{citation.lower()}"
-    cached = ingest._cache_get(cache_key)
+    cached = cache.get(cache_key)
     if isinstance(cached, dict) and cached.get("available"):
         return cached
 
@@ -255,7 +256,7 @@ def treatment_for_citation(citation: str, max_citing: int = 5) -> Dict[str, Any]
             # a partial result whose cited-by lookup was transiently rate-limited
             # would poison future checks, so leave those uncached to retry later.
             if cited_by_count is not None:
-                ingest._cache_put(cache_key, report)
+                cache.set(cache_key, report)
             return report
     except Exception as exc:
         return _unavailable(f"error: {exc}", citation)
