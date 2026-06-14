@@ -77,7 +77,14 @@ def resolve_source_text(
     citation = (citation or "").strip()
     if citation:
         looks_like_case = bool(re.search(r"\bv\.?\b", citation.split(",")[0]))
-        # Live opinion text (best for a real case brief).
+        # AUTHORITATIVE: resolve via CourtListener citation-lookup first — it
+        # matches the reporter cite exactly, so it can't return a same-named-but-
+        # different case the way a free-text search can.
+        resolved = courtlistener.fetch_opinion_by_citation(citation)
+        if resolved and resolved.get("text"):
+            return {"title": resolved.get("case_name", citation), "citation": resolved.get("citation", citation),
+                    "text": resolved["text"][:40000], "url": resolved.get("url", ""), "doc_type": "opinion"}
+        # Fallback: free-text search with a case-name overlap guard.
         try:
             ops = courtlistener.search_opinions(citation, max_results=1)
             if ops and ops[0].get("text"):

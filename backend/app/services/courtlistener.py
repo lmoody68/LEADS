@@ -244,6 +244,60 @@ def _normalize_cluster(client: httpx.Client, cluster: Dict[str, Any]) -> Optiona
     }
 
 
+def fetch_opinion_by_citation(citation: str) -> Optional[Dict[str, Any]]:
+    """
+    Resolve a citation to the CORRECT case via CourtListener's citation-lookup
+    endpoint — authoritative because it matches the reporter cite itself (e.g.
+    "514 U.S. 291"), NOT a free-text search that can return a same-named-but-
+    different case. Then fetch that opinion's text. Returns the normalized
+    opinion dict {case_name, citation, court, date, url, text}, or None
+    gracefully (no token / not recognized / 429 / any error).
+    """
+    citation = (citation or "").strip()
+    if not citation or not has_token():
+        return None
+    try:
+        with httpx.Client() as client:
+            resp = client.post(
+                f"{_BASE}/api/rest/v4/citation-lookup/",
+                headers=_headers(),
+                data={"text": citation},
+                timeout=_TIMEOUT,
+                follow_redirects=True,
+            )
+            if resp.status_code != 200:
+                return None
+            items = resp.json()
+            if not isinstance(items, list):
+                return None
+            resolved = next(
+                (it for it in items if it.get("status") == 200 and (it.get("clusters") or [])),
+                None,
+            )
+            if not resolved:
+                return None
+            cluster = resolved["clusters"][0]
+            op_id = None
+            for sub in (cluster.get("sub_opinions") or []):
+                m = re.search(r"/(\d+)/?$", str(sub).rstrip("/"))
+                if m:
+                    op_id = m.group(1)  # last sub-opinion = lead opinion
+            text = _fetch_opinion_text(client, op_id) if op_id else ""
+            if not text:
+                return None
+            return {
+                "case_name": cluster.get("case_name") or "Court opinion",
+                "citation": resolved.get("citation") or citation,
+                "court": cluster.get("court_id") or "",
+                "date": cluster.get("date_filed") or "",
+                "url": _abs_url(cluster.get("absolute_url", "")),
+                "text": text,
+            }
+    except Exception as exc:
+        print(f"[CourtListener] citation-lookup resolve failed for {citation}: {exc}")
+        return None
+
+
 def _fetch_opinion_text(client: httpx.Client, opinion_id: Any) -> str:
     """Fetch a single opinion's plain text by id, with local caching."""
     cache_key = f"opinion::{opinion_id}"

@@ -380,6 +380,46 @@ export function studyOutline(topic: string): Promise<OutlineResult> {
   return post<OutlineResult>("/study/outline", { topic });
 }
 
+// --- Phase 8: Spaced-repetition flashcard decks -----------------------------
+export interface SrsSaveResult {
+  deck: string;
+  added: number;
+  total: number;
+  session_id: string;
+}
+export interface SrsDeck {
+  name: string;
+  total: number;
+  due: number;
+}
+export interface SrsDueCard {
+  id: string;
+  front: string;
+  back: string;
+}
+export interface SrsDueResult {
+  deck: string;
+  due_count: number;
+  total: number;
+  cards: SrsDueCard[];
+}
+export function srsSave(cards: Flashcard[], deck = "default"): Promise<SrsSaveResult> {
+  return tutorPost<SrsSaveResult>("/study/srs/save", { cards, deck });
+}
+export function srsDecks(): Promise<{ decks: SrsDeck[]; session_id: string }> {
+  return tutorGet<{ decks: SrsDeck[]; session_id: string }>("/study/srs/decks");
+}
+export function srsDue(deck = "default", limit = 20): Promise<SrsDueResult> {
+  return tutorGet<SrsDueResult>(`/study/srs/due?deck=${encodeURIComponent(deck)}&limit=${limit}`);
+}
+export function srsReview(
+  deck: string,
+  cardId: string,
+  rating: "again" | "hard" | "good" | "easy"
+): Promise<{ id: string; due: string; interval: number; ef: number; reps: number }> {
+  return tutorPost("/study/srs/review", { deck, card_id: cardId, rating });
+}
+
 // --- Phase 8: Assistant (agentic orchestrator) ------------------------------
 export interface AssistantResult {
   reply: string;

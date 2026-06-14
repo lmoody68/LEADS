@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   studyFlashcards,
   studyHypo,
@@ -6,18 +6,25 @@ import {
   studyCite,
   studySimilar,
   studyOutline,
+  srsSave,
+  srsDue,
+  srsDecks,
+  srsReview,
   type FlashcardsResult,
   type HypoResult,
   type HypoEvalResult,
   type CiteResult,
   type SimilarResult,
   type OutlineResult,
+  type SrsDueCard,
+  type SrsDeck,
 } from "../lib/api";
 
-type Mode = "flashcards" | "hypo" | "cite" | "research";
+type Mode = "flashcards" | "hypo" | "cite" | "research" | "review";
 
 const MODES: { id: Mode; label: string }[] = [
   { id: "flashcards", label: "🃏 Flashcards" },
+  { id: "review", label: "🔁 Review (SRS)" },
   { id: "hypo", label: "🧩 Issue-Spotter" },
   { id: "cite", label: "📑 Bluebook Cite" },
   { id: "research", label: "🔗 Related & Outline" },
@@ -55,6 +62,7 @@ export default function StudyView() {
       </div>
 
       {mode === "flashcards" && <Flashcards />}
+      {mode === "review" && <Review />}
       {mode === "hypo" && <IssueSpotter />}
       {mode === "cite" && <CiteFormatter />}
       {mode === "research" && <ResearchAids />}
@@ -85,6 +93,22 @@ function Flashcards() {
   const { err, setErr } = useErr();
   const [res, setRes] = useState<FlashcardsResult | null>(null);
   const [flipped, setFlipped] = useState<Record<number, boolean>>({});
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+
+  async function addToDeck() {
+    if (!res || res.cards.length === 0) return;
+    setSaving(true);
+    setSaveMsg(null);
+    try {
+      const r = await srsSave(res.cards);
+      setSaveMsg(`Added ${r.added} new card${r.added === 1 ? "" : "s"} to your review deck (${r.total} total). Study them in the Review tab.`);
+    } catch (e) {
+      setSaveMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function go() {
     if (!topic.trim() && !text.trim()) return;
@@ -132,17 +156,137 @@ function Flashcards() {
         </p>
       )}
       {res && res.cards.length > 0 && (
-        <div className="grid gap-2 sm:grid-cols-2">
-          {res.cards.map((c, i) => (
-            <button key={i} onClick={() => setFlipped((f) => ({ ...f, [i]: !f[i] }))}
-              className="min-h-[88px] rounded-lg border border-slate-200 bg-white p-3 text-left text-sm hover:border-indigo-300">
-              <div className="text-[10px] uppercase tracking-wide text-slate-400">{flipped[i] ? "answer" : "term — tap to flip"}</div>
-              <div className="mt-1 text-slate-800">{flipped[i] ? c.back : c.front}</div>
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <button onClick={() => void addToDeck()} disabled={saving}
+              className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
+              {saving ? "Adding…" : "➕ Add to review deck"}
             </button>
+            {saveMsg && <span className="text-xs text-slate-500">{saveMsg}</span>}
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {res.cards.map((c, i) => (
+              <button key={i} onClick={() => setFlipped((f) => ({ ...f, [i]: !f[i] }))}
+                className="min-h-[88px] rounded-lg border border-slate-200 bg-white p-3 text-left text-sm hover:border-indigo-300">
+                <div className="text-[10px] uppercase tracking-wide text-slate-400">{flipped[i] ? "answer" : "term — tap to flip"}</div>
+                <div className="mt-1 text-slate-800">{flipped[i] ? c.back : c.front}</div>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {res && <p className="text-[11px] text-slate-400">{res.disclaimer}</p>}
+    </div>
+  );
+}
+
+// ---------------- Review (spaced repetition) ----------------
+function Review() {
+  const [decks, setDecks] = useState<SrsDeck[]>([]);
+  const [queue, setQueue] = useState<SrsDueCard[]>([]);
+  const [idx, setIdx] = useState(0);
+  const [revealed, setRevealed] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const { err, setErr } = useErr();
+  const [done, setDone] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    setErr(null);
+    setDone(false);
+    try {
+      const dk = await srsDecks();
+      setDecks(dk.decks);
+      const due = await srsDue("default", 50);
+      setQueue(due.cards);
+      setIdx(0);
+      setRevealed(false);
+      if (due.cards.length === 0) setDone(true);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // load on mount
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function rate(rating: "again" | "hard" | "good" | "easy") {
+    const card = queue[idx];
+    if (!card) return;
+    try {
+      await srsReview("default", card.id, rating);
+    } catch {
+      /* keep going; the schedule write is best-effort */
+    }
+    if (idx + 1 >= queue.length) {
+      setDone(true);
+    } else {
+      setIdx(idx + 1);
+      setRevealed(false);
+    }
+  }
+
+  const card = queue[idx];
+  const totalDue = decks.find((d) => d.name === "default")?.due ?? queue.length;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-slate-500">
+          Spaced repetition (SM-2). Add cards from the Flashcards tab, then review them here — cards
+          you find hard come back sooner.
+        </p>
+        <button onClick={() => void load()} className="text-xs text-indigo-600 hover:underline">Refresh</button>
+      </div>
+      {decks.length > 0 && (
+        <div className="flex flex-wrap gap-2 text-xs">
+          {decks.map((d) => (
+            <span key={d.name} className="rounded bg-slate-100 px-2 py-1 text-slate-600">
+              {d.name}: <strong>{d.due}</strong> due / {d.total}
+            </span>
           ))}
         </div>
       )}
-      {res && <p className="text-[11px] text-slate-400">{res.disclaimer}</p>}
+      {loading && <Spinner label="Loading your deck…" />}
+      {err && <ErrBox msg={err} />}
+      {!loading && decks.length === 0 && (
+        <p className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-400">
+          No review deck yet. Generate flashcards in the Flashcards tab and click “➕ Add to review deck”.
+        </p>
+      )}
+      {!loading && done && decks.length > 0 && (
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-6 text-center text-sm text-emerald-700">
+          🎉 Nothing due right now. {totalDue === 0 ? "You're all caught up." : "Come back when cards are due."}
+        </p>
+      )}
+      {!loading && !done && card && (
+        <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-5">
+          <div className="text-[10px] uppercase tracking-wide text-slate-400">
+            Card {idx + 1} of {queue.length} due
+          </div>
+          <div className="min-h-[60px] text-lg font-medium text-slate-800">{card.front}</div>
+          {revealed ? (
+            <>
+              <div className="rounded-lg bg-slate-50 p-3 text-slate-700">{card.back}</div>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => void rate("again")} className="rounded-lg bg-red-100 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-200">Again</button>
+                <button onClick={() => void rate("hard")} className="rounded-lg bg-amber-100 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-200">Hard</button>
+                <button onClick={() => void rate("good")} className="rounded-lg bg-emerald-100 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-200">Good</button>
+                <button onClick={() => void rate("easy")} className="rounded-lg bg-indigo-100 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-200">Easy</button>
+              </div>
+            </>
+          ) : (
+            <button onClick={() => setRevealed(true)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+              Show answer
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

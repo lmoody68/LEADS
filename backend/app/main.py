@@ -51,6 +51,7 @@ from app.services import (  # noqa: E402
     rag,
     reranker,
     sandbox,
+    srs,
     study,
     tutor,
 )
@@ -259,6 +260,19 @@ class OutlineRequest(BaseModel):
 class AssistantRequest(BaseModel):
     message: str
     history: list[dict] | None = None
+
+
+class SrsSaveRequest(BaseModel):
+    cards: list[dict]
+    deck: str = "default"
+    session_id: str | None = None
+
+
+class SrsReviewRequest(BaseModel):
+    deck: str = "default"
+    card_id: str
+    rating: str
+    session_id: str | None = None
 
 
 # --- Routes ------------------------------------------------------------------
@@ -906,6 +920,60 @@ def study_outline_route(req: OutlineRequest) -> dict:
         raise HTTPException(status_code=400, detail="topic is required")
     _enforce_len(req.topic, "topic")
     return study.outline(req.topic.strip())
+
+
+# --- Phase 8: Spaced-repetition flashcard decks (per session) ----------------
+@app.post("/api/study/srs/save")
+def srs_save_route(
+    req: SrsSaveRequest,
+    x_session_id: str | None = Header(default=None, alias="X-Session-Id"),
+) -> dict:
+    """Add flashcards to the session's spaced-repetition deck."""
+    if not req.cards:
+        raise HTTPException(status_code=400, detail="cards are required")
+    sid = _session_id(x_session_id, req.session_id)
+    out = srs.save_cards(sid, req.cards, deck=req.deck)
+    out["session_id"] = sid
+    return out
+
+
+@app.get("/api/study/srs/decks")
+def srs_decks_route(
+    x_session_id: str | None = Header(default=None, alias="X-Session-Id"),
+    session_id: str | None = None,
+) -> dict:
+    """List the session's decks with due counts."""
+    sid = _session_id(x_session_id, session_id)
+    out = srs.list_decks(sid)
+    out["session_id"] = sid
+    return out
+
+
+@app.get("/api/study/srs/due")
+def srs_due_route(
+    deck: str = "default",
+    limit: int = 20,
+    x_session_id: str | None = Header(default=None, alias="X-Session-Id"),
+    session_id: str | None = None,
+) -> dict:
+    """Get the due cards for a deck."""
+    sid = _session_id(x_session_id, session_id)
+    return srs.due(sid, deck=deck, limit=limit)
+
+
+@app.post("/api/study/srs/review")
+def srs_review_route(
+    req: SrsReviewRequest,
+    x_session_id: str | None = Header(default=None, alias="X-Session-Id"),
+) -> dict:
+    """Apply a review rating (again/hard/good/easy) and reschedule the card."""
+    if not req.card_id.strip():
+        raise HTTPException(status_code=400, detail="card_id is required")
+    sid = _session_id(x_session_id, req.session_id)
+    out = srs.review(sid, req.deck, req.card_id.strip(), req.rating)
+    if "error" in out:
+        raise HTTPException(status_code=400, detail=out["error"])
+    return out
 
 
 @app.post("/api/classifier/publish")
