@@ -140,17 +140,27 @@ def _redact(url: str) -> str:
 
 
 # --- HTTP helper (graceful, honest) -----------------------------------------
-def _get(client: httpx.Client, url: str, *, kind: str = "GET", json_body: Any = None) -> Optional[httpx.Response]:
+def _get(
+    client: httpx.Client,
+    url: str,
+    *,
+    kind: str = "GET",
+    json_body: Any = None,
+    extra_headers: Optional[Dict[str, str]] = None,
+) -> Optional[httpx.Response]:
     """
     Polite GET/POST. Returns the Response, or None on error / rate-limit (429).
 
     GUARDRAIL: on 429 we BACK OFF and return None (graceful) — we never retry-
     hammer or attempt to evade the limit. Any api_key/token in the URL is
-    REDACTED before logging.
+    REDACTED before logging. `extra_headers` lets a caller pass an API key via a
+    header (e.g. X-API-KEY) so the secret stays OUT of the URL/logs entirely.
     """
     try:
         time.sleep(_POLITE_DELAY)
         headers = {"User-Agent": _USER_AGENT, "Accept": "application/json"}
+        if extra_headers:
+            headers.update(extra_headers)
         if kind == "POST":
             resp = client.post(url, headers=headers, json=json_body, timeout=_TIMEOUT, follow_redirects=True)
         else:
@@ -494,6 +504,8 @@ def status() -> Dict[str, Any]:
                 bucket = "federal register (rules)"
             elif "ecfr.gov" in url or "cfr §" in cite or "cfr part" in cite or cite.endswith("cfr"):
                 bucket = "eCFR (regulations)"
+            elif "openstates.org" in url:
+                bucket = "openstates (state bills)"
             elif "congress.gov" in url or doc_type == "bill":
                 bucket = "congress.gov (legislation)"
             elif "regulations.gov" in url or cite.startswith("regulations.gov"):

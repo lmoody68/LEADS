@@ -542,3 +542,93 @@ def ingest_regulations(query: str, limit: int = 5) -> Dict[str, Any]:
             )
 
     return _finish("regulations", query, col, size_before, new_docs, ingested_meta, skipped, note=note)
+
+
+# =============================================================================
+# OpenStates — STATE legislation full-text search (free OPENSTATES_API_KEY)
+# =============================================================================
+# Unlike Congress.gov's free API, OpenStates v3 DOES support keyword search of
+# state bills (`/bills?q=`), filling the state-legislation gap. Free key (10
+# req/min, 250/day) from https://openstates.org/accounts/signup/ — set it as
+# OPENSTATES_API_KEY in backend/.env. The key is sent via the X-API-KEY HEADER
+# (kept out of the URL/logs).
+_OPENSTATES_BASE = "https://v3.openstates.org"
+
+
+def ingest_openstates(query: str, jurisdiction: Optional[str] = None, limit: int = 5) -> Dict[str, Any]:
+    """
+    Ingest STATE bills matching `query` from OpenStates v3 (optionally scoped to a
+    `jurisdiction` like 'California' or 'ca'). Uses each bill's abstract as text
+    (falling back to title + latest action). doc_type='bill'. Requires a free
+    OPENSTATES_API_KEY; returns a clear note (added=0) when it is unset.
+    """
+    limit = _clamp(limit)
+    col = rag.get_collection(rag.LEGAL_COLLECTION)
+    size_before = col.count()
+    key = (os.getenv("OPENSTATES_API_KEY") or "").strip()
+    if not key:
+        return _empty(
+            "openstates", query, size_before,
+            "No OPENSTATES_API_KEY configured — get a free key at "
+            "https://openstates.org/accounts/signup/ and set OPENSTATES_API_KEY in backend/.env.",
+        )
+
+    existing = _existing_source_keys()
+    qp = httpx.QueryParams({"q": query.strip(), "per_page": limit, "sort": "latest_action_desc"})
+    qp = qp.add("include", "abstracts")
+    if jurisdiction and jurisdiction.strip():
+        qp = qp.add("jurisdiction", jurisdiction.strip())
+
+    skipped = 0
+    new_docs: List[Dict[str, Any]] = []
+    ingested_meta: List[Dict[str, Any]] = []
+
+    with httpx.Client() as client:
+        resp = _get(client, f"{_OPENSTATES_BASE}/bills?{qp}", extra_headers={"X-API-KEY": key})
+        if resp is None:
+            return _empty("openstates", query, size_before,
+                          "OpenStates returned no data (rate-limit/network) — try again shortly.")
+        try:
+            results = resp.json().get("results", []) or []
+        except Exception:
+            return _empty("openstates", query, size_before, "OpenStates returned malformed JSON.")
+
+        for b in results[:limit]:
+            identifier = (b.get("identifier") or "").strip()
+            jur = (b.get("jurisdiction") or {}).get("name", "") if isinstance(b.get("jurisdiction"), dict) else ""
+            session = (b.get("session") or "").strip()
+            title = (b.get("title") or identifier or "State bill").strip()
+            web_url = (b.get("openstates_url") or "").strip()
+            citation = f"{jur} {identifier} ({session})".strip()
+            key_norm = _norm_key(citation) or _norm_key(web_url)
+            if not identifier:
+                continue
+            if key_norm and key_norm in existing:
+                skipped += 1
+                continue
+
+            abstracts = [a.get("abstract", "") for a in (b.get("abstracts") or []) if isinstance(a, dict)]
+            text = _clean(" ".join(x for x in abstracts if x))
+            if not text:
+                text = f"{title}. Latest action: {b.get('latest_action_description','')}".strip(". ")
+            if not text:
+                skipped += 1
+                continue
+            existing.add(key_norm)
+
+            new_docs.append(
+                {
+                    "id": "os_" + re.sub(r"[^a-zA-Z0-9]+", "_", citation)[:60],
+                    "source_title": title,
+                    "citation": citation,
+                    "section": jur or "State legislature",
+                    "doc_type": "bill",
+                    "court": jur,
+                    "date": (b.get("latest_action_date") or ""),
+                    "url": web_url,
+                    "text": text[:60000],
+                }
+            )
+            ingested_meta.append({"title": title, "citation": citation, "url": web_url})
+
+    return _finish("openstates", query, col, size_before, new_docs, ingested_meta, skipped)

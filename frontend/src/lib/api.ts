@@ -532,15 +532,25 @@ export function ingestGovinfo(
   });
 }
 
-// --- Phase 8: expanded federal-data connectors (all take query + limit) -----
-export type GovDataEndpoint = "federalregister" | "ecfr" | "congress" | "regulations";
+// --- Phase 8: expanded federal/state-data connectors (query + limit) --------
+export type GovDataEndpoint =
+  | "federalregister"
+  | "ecfr"
+  | "congress"
+  | "regulations"
+  | "openstates";
 
 export function ingestGovData(
   endpoint: GovDataEndpoint,
   query: string,
-  limit: number
+  limit: number,
+  jurisdiction?: string
 ): Promise<IngestResult> {
-  return post<IngestResult>(`/ingest/${endpoint}`, { query, limit });
+  return post<IngestResult>(`/ingest/${endpoint}`, {
+    query,
+    limit,
+    jurisdiction: jurisdiction || undefined,
+  });
 }
 
 export function ingestStatus(): Promise<IngestStatus> {

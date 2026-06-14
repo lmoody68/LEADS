@@ -55,6 +55,12 @@ const SOURCES: Record<
     placeholder: "Query — e.g. debt collection rulemaking",
     hint: "Rulemaking documents + dockets (api.data.gov).",
   },
+  openstates: {
+    label: "OpenStates (state bills)",
+    placeholder: "Query — e.g. data broker privacy",
+    scope: "State (optional) — e.g. California or ca",
+    hint: "Keyword search of STATE legislation (free OpenStates key).",
+  },
 };
 
 export default function DataView() {
@@ -113,7 +119,8 @@ export default function DataView() {
       } else if (source === "govinfo") {
         res = await ingestGovinfo(q, limit, scope.trim() || undefined);
       } else {
-        res = await ingestGovData(source, q, limit);
+        // openstates uses the optional jurisdiction scope; the others ignore it.
+        res = await ingestGovData(source, q, limit, scope.trim() || undefined);
       }
       setIngestRes(res);
       await refreshStatus();
@@ -182,8 +189,9 @@ export default function DataView() {
         <h2 className="text-xl font-semibold text-slate-800">Data — Corpus Ingestion (admin)</h2>
         <p className="text-sm text-slate-500">
           Grow the legal corpus from <strong>official public-data APIs only</strong> — case law
-          (CourtListener), statutes (govinfo), regulations (Federal Register, eCFR), legislation
-          (Congress.gov), and rulemaking dockets (Regulations.gov) — check citations against the{" "}
+          (CourtListener), statutes (govinfo), regulations (Federal Register, eCFR), federal
+          legislation (Congress.gov), state legislation (OpenStates), and rulemaking dockets
+          (Regulations.gov) — check citations against the{" "}
           <strong>real CourtListener citation network</strong>, and discover{" "}
           <strong>public legal datasets</strong> (Hugging Face Hub). No scraping, no bot-protection /
           rate-limit evasion, and <strong>no PII / people-search data</strong> — PII datasets are

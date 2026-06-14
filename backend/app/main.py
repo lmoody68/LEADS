@@ -194,6 +194,7 @@ class DatasetIngestRequest(BaseModel):
 class GovDataIngestRequest(BaseModel):
     query: str
     limit: int = 5
+    jurisdiction: str | None = None  # OpenStates only — e.g. 'California' or 'ca'
 
 
 class CitatorRequest(BaseModel):
@@ -618,6 +619,23 @@ def ingest_regulations_route(req: GovDataIngestRequest) -> dict:
         raise HTTPException(status_code=400, detail="query is required")
     _enforce_len(req.query, "query")
     return govdata.ingest_regulations(req.query.strip(), limit=req.limit)
+
+
+@app.post("/api/ingest/openstates")
+def ingest_openstates_route(req: GovDataIngestRequest) -> dict:
+    """
+    Ingest STATE bills matching a query via OpenStates v3 (optional jurisdiction
+    scope, e.g. 'California'). Fills the state-legislation gap with real keyword
+    search. Requires a free OPENSTATES_API_KEY (clear note in the response if unset).
+    """
+    if not req.query.strip():
+        raise HTTPException(status_code=400, detail="query is required")
+    _enforce_len(req.query, "query")
+    return govdata.ingest_openstates(
+        req.query.strip(),
+        jurisdiction=(req.jurisdiction or "").strip() or None,
+        limit=req.limit,
+    )
 
 
 # --- Phase 8: Real citation network (MasterBuildPlan §3.3 enhancement) --------
