@@ -1,9 +1,10 @@
 import { useState } from "react";
 import ResearchView from "./views/ResearchView";
 import MemoView from "./views/MemoView";
+import ComplianceView from "./views/ComplianceView";
 import DocumentView from "./views/DocumentView";
 
-type Tab = "research" | "memo" | "document";
+type Tab = "research" | "memo" | "compliance" | "document";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("research");
@@ -38,6 +39,16 @@ export default function App() {
               Research Memo
             </button>
             <button
+              onClick={() => setTab("compliance")}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                tab === "compliance"
+                  ? "bg-white text-indigo-700 shadow-sm"
+                  : "text-slate-600 hover:text-slate-800"
+              }`}
+            >
+              Compliance Advisor
+            </button>
+            <button
               onClick={() => setTab("document")}
               className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
                 tab === "document"
@@ -57,6 +68,8 @@ export default function App() {
             <ResearchView />
           ) : tab === "memo" ? (
             <MemoView />
+          ) : tab === "compliance" ? (
+            <ComplianceView />
           ) : (
             <DocumentView />
           )}

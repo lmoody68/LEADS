@@ -29,12 +29,23 @@ from pydantic import BaseModel
 # Load .env from the backend root (explicit path so it works under `-m app.main`).
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 
-from app.services import agent_memo, casefile, courtlistener, llm_router, rag  # noqa: E402
+from app.services import (  # noqa: E402
+    agent_memo,
+    casefile,
+    compliance,
+    courtlistener,
+    credibility,
+    llm_router,
+    rag,
+)
 
 app = FastAPI(
     title="L.E.A.D.S. API",
-    description="Legal Education & Analytical Deep-Search — Phase 2 (Agentic Research Memo)",
-    version="0.3.0",
+    description=(
+        "Legal Education & Analytical Deep-Search — Phase 3 "
+        "(Source-Credibility Scorer + Compliance & Ethics Advisor)"
+    ),
+    version="0.4.0",
 )
 
 # In-memory memo history (last N). Process-local, never persisted/published —
@@ -78,13 +89,27 @@ class MemoRequest(BaseModel):
     deep: bool = True  # True = also pull live CourtListener case law per sub-question
 
 
+class ComplianceRequest(BaseModel):
+    scenario: str
+
+
+class CredibilityRequest(BaseModel):
+    # Either reference a source by id (chunk_id from a prior result) ...
+    source_id: str | None = None
+    # ... or paste the source directly.
+    title: str | None = None
+    citation: str | None = None
+    text: str | None = None
+
+
 # --- Routes ------------------------------------------------------------------
 @app.get("/api/health")
 def health() -> dict:
     return {
         "status": "ok",
         "service": "L.E.A.D.S.",
-        "phase": 2,
+        "phase": 3,
+        "version": "0.4.0",
         "llm_providers": llm_router.available_providers(),
         "corpus_size": rag.get_collection().count(),
         "courtlistener": courtlistener.availability(),
@@ -142,6 +167,50 @@ def memo_history(limit: int = 10) -> dict:
     """Return the last N memo requests (in-memory, newest last)."""
     limit = max(1, min(limit, _MEMO_HISTORY_MAX))
     return {"history": _MEMO_HISTORY[-limit:], "total": len(_MEMO_HISTORY)}
+
+
+@app.post("/api/compliance")
+def compliance_analyze(req: ComplianceRequest) -> dict:
+    """
+    Compliance & Ethics Advisor (MasterBuildPlan §3.5). TEACHING/ADVISORY ONLY:
+    given a user-described investigative scenario, retrieve the governing
+    statutory text (FDCPA/FCRA/DPPA/GLBA) from the seeded corpus and produce a
+    STRUCTURED legal analysis — permissible-purpose verdict, governing statutes,
+    restrictions, risk flags, and COMPLIANT alternatives, with citations and a
+    'general legal information, not legal advice' disclaimer.
+
+    GUARDRAIL: for an unlawful scenario it explains WHY the method is
+    impermissible and steers to the lawful alternative — it is NEVER a how-to for
+    unlawful skip tracing / PII gathering.
+    """
+    if not req.scenario.strip():
+        raise HTTPException(status_code=400, detail="scenario is required")
+    return compliance.analyze(req.scenario)
+
+
+@app.post("/api/credibility")
+def credibility_score(req: CredibilityRequest) -> dict:
+    """
+    Source Credibility Scorer (MasterBuildPlan §3.3). Scores a source across the
+    five weighted dimensions (Authority 25 / Currency 20 / Corroboration 25 /
+    Bias-Interest 15 / Completeness 15) → weighted total + tier + flags +
+    corroboration (agree/conflict against other corpus sources) + a clearly-
+    labeled Shepardize-style HEURISTIC.
+
+    Provide either a `source_id` (chunk_id from a prior result) OR a pasted
+    {title, citation, text}.
+    """
+    if not (req.source_id or req.title or req.citation or req.text):
+        raise HTTPException(
+            status_code=400,
+            detail="provide a source_id, or a title/citation/text to score",
+        )
+    return credibility.score(
+        source_id=req.source_id,
+        title=req.title,
+        citation=req.citation,
+        text=req.text,
+    )
 
 
 @app.post("/api/casefile/upload")

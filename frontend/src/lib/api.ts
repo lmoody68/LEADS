@@ -109,6 +109,76 @@ export async function memoHistory(limit = 10): Promise<{ history: MemoHistoryEnt
   return res.json();
 }
 
+// --- Phase 3: Compliance & Ethics Advisor ----------------------------------
+export interface ComplianceCitation {
+  source_title: string;
+  citation: string;
+  url?: string;
+  snippet: string;
+}
+
+export interface GoverningStatute {
+  name: string;
+  citation: string;
+  why: string;
+  url?: string;
+}
+
+export interface ComplianceResponse {
+  scenario: string;
+  permissible_purpose: { verdict: "yes" | "no" | "depends" | string; explanation: string };
+  governing_statutes: GoverningStatute[];
+  restrictions: string[];
+  risk_flags: string[];
+  compliant_alternatives: string[];
+  citations: ComplianceCitation[];
+  disclaimer: string;
+  provider: string;
+}
+
+export function analyzeCompliance(scenario: string): Promise<ComplianceResponse> {
+  return post<ComplianceResponse>("/compliance", { scenario });
+}
+
+// --- Phase 3: Source-Credibility Scorer -------------------------------------
+export interface CredibilityDimension {
+  name: string;
+  weight: number;
+  score_0_100: number;
+  rationale: string;
+}
+
+export interface CredibilityResponse {
+  source: {
+    source_title: string;
+    citation: string;
+    doc_type?: string;
+    court?: string;
+    date?: string;
+    url?: string;
+    legal_section?: string;
+  };
+  dimensions: CredibilityDimension[];
+  weighted_total: number;
+  tier: "primary" | "secondary" | string;
+  flags: string[];
+  corroboration: { agreeing: string[]; conflicting: string[] };
+  shepardize_heuristic: string;
+  provider: string;
+  error?: string;
+}
+
+export interface CredibilityInput {
+  source_id?: string;
+  title?: string;
+  citation?: string;
+  text?: string;
+}
+
+export function scoreCredibility(input: CredibilityInput): Promise<CredibilityResponse> {
+  return post<CredibilityResponse>("/credibility", input);
+}
+
 export interface Entities {
   people: string[];
   organizations: string[];

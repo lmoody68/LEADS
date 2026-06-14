@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Citation } from "../lib/api";
+import CredibilityPanel from "./CredibilityPanel";
 
 export function ProviderBadge({ provider }: { provider: string }) {
   const isExtractive = provider.startsWith("extractive");
@@ -93,6 +94,11 @@ function SourceCard({ c, index }: { c: Citation; index: number }) {
           </a>
         )}
       </div>
+
+      {/* Source-Credibility Scorer (Phase 3) — scores this card on demand. */}
+      <CredibilityPanel
+        input={{ title: c.source_title, citation: c.citation, text: c.snippet }}
+      />
     </div>
   );
 }
