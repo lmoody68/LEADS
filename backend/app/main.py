@@ -36,6 +36,7 @@ from app.services import (  # noqa: E402
     casebrief,
     casefile,
     citator,
+    classifier,
     compliance,
     courtlistener,
     credibility,
@@ -213,6 +214,15 @@ class ExplainRequest(BaseModel):
     source_id: str | None = None
 
 
+class TrainRequest(BaseModel):
+    label_field: str = "doc_type"
+    min_per_class: int = 20
+
+
+class ClassifyRequest(BaseModel):
+    text: str
+
+
 # --- Routes ------------------------------------------------------------------
 @app.get("/api/health")
 def health() -> dict:
@@ -227,6 +237,7 @@ def health() -> dict:
         "citator": {"available": citator.has_token()},
         "reranker": reranker.status(),
         "observability": llm_router.observability(),
+        "classifier": {"trained": classifier.available()},
     }
 
 
@@ -743,4 +754,40 @@ def explain_route(req: ExplainRequest) -> dict:
     out = plainlang.explain(**_explain_inputs(req))
     if "error" in out:
         raise HTTPException(status_code=404, detail=out["error"])
+    return out
+
+
+# --- Phase 8: Auxiliary document classifier (supervised-ML showcase) ----------
+# Trains a LogisticRegression head on the corpus's existing MiniLM embeddings to
+# tag a document's TYPE (statute/opinion/regulation/bill). Auxiliary metadata
+# tagger only — NOT legal advice, trained on PUBLIC corpus text, NO torch.
+@app.get("/api/classifier/status")
+def classifier_status_route() -> dict:
+    """Whether a classifier is trained + its honest metrics (held-out + CV)."""
+    return classifier.status()
+
+
+@app.post("/api/classifier/train")
+def classifier_train_route(req: TrainRequest | None = None) -> dict:
+    """
+    Train the auxiliary doc-type classifier on the public corpus embeddings.
+    Returns honest metrics or 400 if there aren't enough labeled samples.
+    """
+    label_field = (req.label_field if req else "doc_type") or "doc_type"
+    min_per_class = max(5, (req.min_per_class if req else 20))
+    out = classifier.train(label_field=label_field, min_per_class=min_per_class)
+    if "error" in out:
+        raise HTTPException(status_code=400, detail=out["error"])
+    return out
+
+
+@app.post("/api/classifier/predict")
+def classifier_predict_route(req: ClassifyRequest) -> dict:
+    """Classify a piece of legal text by document type (auxiliary tagger)."""
+    if not req.text.strip():
+        raise HTTPException(status_code=400, detail="text is required")
+    _enforce_len(req.text, "text")
+    out = classifier.predict(req.text.strip())
+    if "error" in out:
+        raise HTTPException(status_code=400, detail=out["error"])
     return out

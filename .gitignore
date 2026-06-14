@@ -30,3 +30,6 @@
 # OS
 .DS_Store
 Thumbs.db
+
+# Trained ML model artifacts (retrainable from the corpus)
+backend/models/

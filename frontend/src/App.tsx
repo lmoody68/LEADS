@@ -6,8 +6,9 @@ import DocumentView from "./views/DocumentView";
 import TutorView from "./views/TutorView";
 import DataView from "./views/DataView";
 import ExplainView from "./views/ExplainView";
+import ClassifierView from "./views/ClassifierView";
 
-type Tab = "research" | "memo" | "explain" | "compliance" | "document" | "tutor" | "data";
+type Tab = "research" | "memo" | "explain" | "compliance" | "document" | "tutor" | "data" | "classifier";
 
 // One source of truth for the tab nav: label + a one-line "what this does" blurb
 // shown under the header. Keeps the nav consistent and gives every tab a clear
@@ -48,6 +49,12 @@ const TABS: { id: Tab; label: string; blurb: string }[] = [
     label: "Tutor",
     blurb:
       "Adaptive investigative-methodology tutor powered by Bayesian Knowledge Tracing (BKT) — lessons, quizzes, a practice sandbox, and a red/yellow/green mastery dashboard.",
+  },
+  {
+    id: "classifier",
+    label: "Classifier",
+    blurb:
+      "Supervised-ML showcase: MiniLM corpus embeddings → a logistic-regression head that tags a document's type (statute/opinion/regulation/bill), with honest held-out + cross-validated metrics and a live try-it box.",
   },
   {
     id: "data",
@@ -109,6 +116,8 @@ export default function App() {
             <DocumentView />
           ) : tab === "tutor" ? (
             <TutorView />
+          ) : tab === "classifier" ? (
+            <ClassifierView />
           ) : (
             <DataView />
           )}

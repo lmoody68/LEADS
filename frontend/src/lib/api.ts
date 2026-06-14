@@ -247,6 +247,46 @@ export function caseBrief(input: ExplainInput): Promise<CaseBriefResult> {
   return post<CaseBriefResult>("/brief", input);
 }
 
+// --- Phase 8: Auxiliary document classifier (supervised-ML showcase) --------
+export interface ClassifierMetrics {
+  trained: boolean;
+  note?: string;
+  model?: string;
+  task?: string;
+  label_field?: string;
+  classes?: string[];
+  n_samples?: number;
+  n_features?: number;
+  holdout?: { test_size: number; accuracy: number; macro_f1: number };
+  cross_val?: { folds: number; macro_f1_mean: number; macro_f1_std: number };
+  per_class?: Record<
+    string,
+    { precision: number; recall: number; f1: number; support: number; train_count: number }
+  >;
+  confusion?: { labels: string[]; matrix: number[][] };
+  excluded_classes?: Record<string, number>;
+  min_per_class?: number;
+  trained_at?: string;
+  disclaimer?: string;
+}
+export interface PredictResult {
+  label: string;
+  confidence: number;
+  probabilities: { label: string; confidence: number }[];
+  model: string;
+  disclaimer: string;
+}
+
+export function classifierStatus(): Promise<ClassifierMetrics> {
+  return casefileGet<ClassifierMetrics>("/classifier/status");
+}
+export function classifierTrain(): Promise<ClassifierMetrics> {
+  return post<ClassifierMetrics>("/classifier/train", {});
+}
+export function classifierPredict(text: string): Promise<PredictResult> {
+  return post<PredictResult>("/classifier/predict", { text });
+}
+
 export interface CredibilityInput {
   source_id?: string;
   title?: string;
