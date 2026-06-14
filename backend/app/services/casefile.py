@@ -18,7 +18,7 @@ import re
 import uuid
 from typing import Any, Dict, List
 
-from . import llm_router, rag
+from . import doc_analysis, llm_router, rag
 from .docparse import parse_document
 
 # --- Deterministic regex fallbacks (used when no LLM key) ---------------------
@@ -131,6 +131,8 @@ def ingest_upload(filename: str, data: bytes, collection_id: str | None = None) 
         [{"source_title": filename, "citation": filename, "section": filename, "text": text}],
         collection_name=col_name,
     )
+    # A new document changed this collection — drop any cached cross-doc analyses.
+    doc_analysis.invalidate(collection_id)
     entities = extract_entities(text)
 
     return {

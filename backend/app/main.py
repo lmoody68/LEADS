@@ -37,6 +37,7 @@ from app.services import (  # noqa: E402
     compliance,
     courtlistener,
     credibility,
+    doc_analysis,
     llm_router,
     rag,
     sandbox,
@@ -46,10 +47,10 @@ from app.services import (  # noqa: E402
 app = FastAPI(
     title="L.E.A.D.S. API",
     description=(
-        "Legal Education & Analytical Deep-Search — Phase 4 "
-        "(BKT Investigative-Methodology Tutor + Practice Sandbox)"
+        "Legal Education & Analytical Deep-Search — Phase 5 "
+        "(Enhanced Document Analysis: relationships, timeline, patterns, redaction)"
     ),
-    version="0.5.0",
+    version="0.6.0",
 )
 
 
@@ -96,6 +97,11 @@ class AskRequest(BaseModel):
 class CaseAskRequest(BaseModel):
     question: str
     collection_id: str
+
+
+class RedactionRequest(BaseModel):
+    # Optional LLM augmentation of the always-on deterministic regex PII pass.
+    use_llm: bool = True
 
 
 class MemoRequest(BaseModel):
@@ -145,8 +151,8 @@ def health() -> dict:
     return {
         "status": "ok",
         "service": "L.E.A.D.S.",
-        "phase": 4,
-        "version": "0.5.0",
+        "phase": 5,
+        "version": "0.6.0",
         "llm_providers": llm_router.available_providers(),
         "corpus_size": rag.get_collection().count(),
         "courtlistener": courtlistener.availability(),
@@ -276,6 +282,56 @@ def casefile_ask(req: CaseAskRequest) -> dict:
 def casefile_entities(collection_id: str) -> dict:
     """Entity outline for an uploaded collection."""
     return {"collection_id": collection_id, "entities": casefile.get_entities(collection_id)}
+
+
+# --- Phase 5: Enhanced Document Analysis (MasterBuildPlan §3.7) --------------
+# All four operate over an EXISTING uploaded collection. Results are cached per
+# collection (recompute with ?refresh=true). Each LLM step degrades to a
+# deterministic/extractive fallback so nothing crashes without a key.
+@app.get("/api/casefile/{collection_id}/relationships")
+def casefile_relationships(collection_id: str, refresh: bool = False) -> dict:
+    """
+    Relationship mapping: entities + typed relationships (who↔whom, how) extracted
+    across the collection's documents, each with an evidence snippet + source doc.
+    Falls back to deterministic proper-noun entity candidates with no LLM key.
+    """
+    out = doc_analysis.get_cached(collection_id, "relationships", refresh=refresh)
+    return {"collection_id": collection_id, **out}
+
+
+@app.get("/api/casefile/{collection_id}/timeline")
+def casefile_timeline(collection_id: str, refresh: bool = False) -> dict:
+    """
+    Timeline construction: a sorted chronology of dated events across the docs,
+    each {date, event, source_doc, snippet}. Falls back to a deterministic
+    dated-sentence timeline with no LLM key.
+    """
+    out = doc_analysis.get_cached(collection_id, "timeline", refresh=refresh)
+    return {"collection_id": collection_id, **out}
+
+
+@app.get("/api/casefile/{collection_id}/patterns")
+def casefile_patterns(collection_id: str, refresh: bool = False) -> dict:
+    """
+    Cross-document pattern / discrepancy detection: observations that span
+    multiple documents, each typed 'pattern' or 'discrepancy' with supporting
+    docs. Falls back to shared-entity detection with no LLM key.
+    """
+    out = doc_analysis.get_cached(collection_id, "patterns", refresh=refresh)
+    return {"collection_id": collection_id, **out}
+
+
+@app.post("/api/casefile/{collection_id}/redaction")
+def casefile_redaction(collection_id: str, req: RedactionRequest | None = None) -> dict:
+    """
+    Redaction suggestion (PRIVACY tool): flags sensitive PII (SSN, account/routing,
+    card, phone, email, DOB, EIN) so the user can redact BEFORE sharing. A
+    deterministic regex pass ALWAYS runs (works with no key); an optional LLM pass
+    augments it with less-structured PII (addresses, license numbers, etc.).
+    """
+    use_llm = req.use_llm if req else True
+    out = doc_analysis.redaction(collection_id, use_llm=use_llm)
+    return {"collection_id": collection_id, **out}
 
 
 # --- Phase 4: BKT Investigative-Methodology Tutor (MasterBuildPlan §3.4) ------

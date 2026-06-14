@@ -448,3 +448,104 @@ export async function casefileUpload(
   }
   return res.json() as Promise<UploadResponse>;
 }
+
+// --- Phase 5: Enhanced Document Analysis ------------------------------------
+export interface Relationship {
+  from: string;
+  to: string;
+  type: string;
+  evidence_snippet: string;
+  source_doc: string;
+}
+export interface RelationshipsResponse {
+  collection_id: string;
+  entities: string[];
+  relationships: Relationship[];
+  provider: string;
+  note?: string;
+}
+
+export interface TimelineEvent {
+  date: string;
+  event: string;
+  source_doc: string;
+  snippet: string;
+}
+export interface TimelineResponse {
+  collection_id: string;
+  events: TimelineEvent[];
+  provider: string;
+  note?: string;
+}
+
+export interface PatternObservation {
+  observation: string;
+  type: "pattern" | "discrepancy" | string;
+  supporting_docs: string[];
+}
+export interface PatternsResponse {
+  collection_id: string;
+  observations: PatternObservation[];
+  provider: string;
+  note?: string;
+}
+
+export interface RedactionItem {
+  type: string;
+  text: string;
+  suggested_redaction: string;
+  source_doc: string;
+  reason: string;
+  detected_by: "regex" | "llm" | string;
+}
+export interface RedactionResponse {
+  collection_id: string;
+  redactions: RedactionItem[];
+  deterministic_count: number;
+  llm_count: number;
+  provider: string;
+  note?: string;
+  privacy_note: string;
+}
+
+async function casefileGet<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`);
+  if (!res.ok) {
+    const detail = await res.text().catch(() => res.statusText);
+    throw new Error(`${res.status}: ${detail}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export function casefileRelationships(
+  collectionId: string,
+  refresh = false
+): Promise<RelationshipsResponse> {
+  return casefileGet<RelationshipsResponse>(
+    `/casefile/${collectionId}/relationships${refresh ? "?refresh=true" : ""}`
+  );
+}
+export function casefileTimeline(
+  collectionId: string,
+  refresh = false
+): Promise<TimelineResponse> {
+  return casefileGet<TimelineResponse>(
+    `/casefile/${collectionId}/timeline${refresh ? "?refresh=true" : ""}`
+  );
+}
+export function casefilePatterns(
+  collectionId: string,
+  refresh = false
+): Promise<PatternsResponse> {
+  return casefileGet<PatternsResponse>(
+    `/casefile/${collectionId}/patterns${refresh ? "?refresh=true" : ""}`
+  );
+}
+export function casefileRedaction(
+  collectionId: string,
+  useLlm = true
+): Promise<RedactionResponse> {
+  return post<RedactionResponse>(`/casefile/${collectionId}/redaction`, {
+    use_llm: useLlm,
+  });
+}
