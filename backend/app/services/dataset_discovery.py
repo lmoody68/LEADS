@@ -61,6 +61,10 @@ _PII_SIGNALS = [
     "leaked", "breach", "credentials", "password dump", "email list",
     "contact list", "phone book", "phonebook", "genealogy", "ancestry",
     "date of birth", "dob dataset",
+    # people-directory style — benign-sounding names that are still personal data:
+    "citizen", "resident", "constituent", "household", "census microdata",
+    "people directory", "person record", "persons dataset", "individuals dataset",
+    "full name", "home address", "voter roll", "registry of persons",
 ]
 
 # Positive legal signals — help rank/justify legal relevance.
@@ -78,8 +82,11 @@ def is_pii_risk(name: str, description: str) -> bool:
     True if a dataset looks like personal-data / people-search content that must
     NOT be ingested. Errs on the side of caution.
     """
-    blob = f"{name} {description}".lower()
-    return any(sig in blob for sig in _PII_SIGNALS)
+    def _norm(s: str) -> str:
+        # separator-agnostic: "people-directory" / "people_directory" == "people directory"
+        return s.lower().replace("-", " ").replace("_", " ").replace("/", " ")
+    blob = _norm(f"{name} {description}")
+    return any(_norm(sig) in blob for sig in _PII_SIGNALS)
 
 
 def _looks_legal(name: str, description: str) -> bool:
@@ -260,16 +267,29 @@ def ingest_dataset(dataset_id: str, source: str = "huggingface", sample_rows: in
     if not dataset_id:
         return {"error": "dataset_id is required"}
 
-    # Re-screen for PII at ingestion time (defense-in-depth).
-    if is_pii_risk(dataset_id, ""):
+    # Re-screen for PII at ingestion time (defense-in-depth): inspect the dataset's
+    # FULL card (id + tags + description), not just the id — a benign-NAMED people
+    # dataset must still be refused.
+    screen_blob = dataset_id
+    if source == "huggingface":
+        try:
+            from huggingface_hub import dataset_info  # type: ignore
+            _info = dataset_info(dataset_id)
+            _tags = " ".join(getattr(_info, "tags", None) or [])
+            _card = getattr(_info, "card_data", None)
+            _desc = (_card.to_dict() if (_card is not None and hasattr(_card, "to_dict")) else _card) or ""
+            screen_blob = f"{dataset_id} {_tags} {_desc}"
+        except Exception:
+            screen_blob = dataset_id  # offline / unknown id → id-only screen (+ column check below still guards)
+    if is_pii_risk(dataset_id, screen_blob):
         return {
             "dataset_id": dataset_id,
             "source": source,
             "ingested_rows": 0,
             "added_chunks": 0,
             "mode": "refused",
-            "note": "Refused: dataset id matches a personal-data / people-search signal. "
-                    "L.E.A.D.S. ingests public legal text only — no PII datasets.",
+            "note": "Refused: dataset matches a personal-data / people-search signal "
+                    "(id / tags / description). L.E.A.D.S. ingests public legal text only — no PII datasets.",
         }
 
     sample_rows = max(1, min(int(sample_rows or 10), 50))
@@ -315,6 +335,24 @@ def ingest_dataset(dataset_id: str, source: str = "huggingface", sample_rows: in
                 note=f"Could not stream a sample ({type(exc).__name__}/{type(exc2).__name__}); "
                      "registered metadata only.",
             )
+
+    # Defense-in-depth: refuse if the sampled rows' COLUMNS look like personal data
+    # — catches a benign-named people dataset by its actual schema, regardless of name.
+    if rows:
+        _PII_COLS = ("name", "full_name", "first_name", "last_name", "email", "e_mail",
+                     "address", "home_address", "phone", "phone_number", "ssn",
+                     "social_security", "dob", "date_of_birth", "birth", "passport",
+                     "license_number", "national_id", "employer", "credit_card", "account_number")
+        cols = {str(k).lower().replace(" ", "_").replace("-", "_")
+                for r in rows[:3] if hasattr(r, "keys") for k in r.keys()}
+        col_hits = sorted({c for c in cols if any(p in c for p in _PII_COLS)})
+        if col_hits:
+            return {
+                "dataset_id": dataset_id, "source": source, "ingested_rows": 0,
+                "added_chunks": 0, "mode": "refused",
+                "note": f"Refused: sampled rows contain personal-data columns "
+                        f"({', '.join(col_hits[:6])}). No PII datasets are ingested.",
+            }
 
     docs: List[Dict[str, Any]] = []
     for i, row in enumerate(rows):
