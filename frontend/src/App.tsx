@@ -7,13 +7,29 @@ import TutorView from "./views/TutorView";
 import DataView from "./views/DataView";
 import ExplainView from "./views/ExplainView";
 import ClassifierView from "./views/ClassifierView";
+import GuideView from "./views/GuideView";
 
-type Tab = "research" | "memo" | "explain" | "compliance" | "document" | "tutor" | "data" | "classifier";
+type Tab =
+  | "guide"
+  | "research"
+  | "memo"
+  | "explain"
+  | "compliance"
+  | "document"
+  | "tutor"
+  | "data"
+  | "classifier";
 
 // One source of truth for the tab nav: label + a one-line "what this does" blurb
 // shown under the header. Keeps the nav consistent and gives every tab a clear
 // landing description (portfolio polish, Phase 6).
 const TABS: { id: Tab; label: string; blurb: string }[] = [
+  {
+    id: "guide",
+    label: "Guide",
+    blurb:
+      "How to use L.E.A.D.S. — what each feature does, step-by-step, with real-world examples you can copy.",
+  },
   {
     id: "research",
     label: "Research",
@@ -65,7 +81,7 @@ const TABS: { id: Tab; label: string; blurb: string }[] = [
 ];
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("research");
+  const [tab, setTab] = useState<Tab>("guide");
   const active = TABS.find((t) => t.id === tab) ?? TABS[0];
 
   return (
@@ -104,7 +120,9 @@ export default function App() {
         {/* Per-tab landing blurb so each feature is self-describing. */}
         <p className="mb-3 text-sm text-slate-500">{active.blurb}</p>
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          {tab === "research" ? (
+          {tab === "guide" ? (
+            <GuideView />
+          ) : tab === "research" ? (
             <ResearchView />
           ) : tab === "memo" ? (
             <MemoView />
