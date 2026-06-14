@@ -20,7 +20,9 @@ langsmith
 #   kaggle   : discover Kaggle legal datasets (only if kaggle.json creds present).
 # Uncomment to enable:
 # datasets
-# kaggle
+# kaggle — ENABLED: Kaggle public-dataset discovery (official API; KAGGLE_API_TOKEN
+# or kaggle.json creds; gracefully skipped if absent).
+kaggle
 # OCR is OPTIONAL and import-guarded in code (requires a Tesseract binary on PATH).
 # Uncomment to enable image OCR for the Document Analyzer:
 # pytesseract
