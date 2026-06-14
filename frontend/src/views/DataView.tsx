@@ -2,16 +2,60 @@ import { useEffect, useState } from "react";
 import {
   ingestCourtListener,
   ingestGovinfo,
+  ingestGovData,
   ingestStatus,
   discoverDatasets,
   ingestDataset,
+  checkCitator,
   type IngestResult,
   type IngestStatus,
   type DiscoverResponse,
   type DiscoveredDataset,
+  type CitatorResult,
+  type GovDataEndpoint,
 } from "../lib/api";
 
-type Source = "courtlistener" | "govinfo";
+type Source = "courtlistener" | "govinfo" | GovDataEndpoint;
+
+// Source catalog — label, query placeholder, whether it has a "scope" field,
+// and whether it needs an API key (all keys are free / already wired).
+const SOURCES: Record<
+  Source,
+  { label: string; placeholder: string; scope?: string; hint: string }
+> = {
+  courtlistener: {
+    label: "CourtListener (case law)",
+    placeholder: "Topic / query — e.g. FDCPA attorney debt collection",
+    scope: "Jurisdiction (optional) — e.g. ca9, scotus",
+    hint: "Public court opinions (Free Law Project).",
+  },
+  govinfo: {
+    label: "govinfo (statutes)",
+    placeholder: "Query — e.g. fair debt collection practices",
+    scope: "Collection (optional) — USCODE/CFR/PLAW/BILLS",
+    hint: "U.S. Code / public laws / bills (api.data.gov).",
+  },
+  federalregister: {
+    label: "Federal Register (rules)",
+    placeholder: "Query — e.g. Regulation F debt collection",
+    hint: "Agency final/proposed rules + notices (keyless API).",
+  },
+  ecfr: {
+    label: "eCFR (regulations)",
+    placeholder: "Query — e.g. debt collection",
+    hint: "Code of Federal Regulations text (keyless API).",
+  },
+  congress: {
+    label: "Congress.gov (a bill)",
+    placeholder: "A bill BY NUMBER — e.g. HR 3221 110  or  S 619 118",
+    hint: "Free API has no keyword search — look up a specific bill by number.",
+  },
+  regulations: {
+    label: "Regulations.gov (dockets)",
+    placeholder: "Query — e.g. debt collection rulemaking",
+    hint: "Rulemaking documents + dockets (api.data.gov).",
+  },
+};
 
 export default function DataView() {
   // --- Corpus expansion state ---
@@ -34,6 +78,15 @@ export default function DataView() {
   const [addingId, setAddingId] = useState<string | null>(null);
   const [dsMsg, setDsMsg] = useState<string | null>(null);
 
+  // --- Citator state ---
+  const [cite, setCite] = useState("");
+  const [citing, setCiting] = useState(false);
+  const [citErr, setCitErr] = useState<string | null>(null);
+  const [citRes, setCitRes] = useState<CitatorResult | null>(null);
+
+  const cfg = SOURCES[source];
+  const hasScope = Boolean(cfg.scope);
+
   async function refreshStatus() {
     try {
       setStatus(await ingestStatus());
@@ -48,22 +101,41 @@ export default function DataView() {
 
   async function runIngest() {
     const q = query.trim();
-    if (!q && source === "courtlistener") return;
-    if (!q && !scope.trim()) return;
+    // govinfo can run on scope alone; everything else needs a query.
+    if (!q && !(source === "govinfo" && scope.trim())) return;
     setIngesting(true);
     setIngestErr(null);
     setIngestRes(null);
     try {
-      const res =
-        source === "courtlistener"
-          ? await ingestCourtListener(q, limit, scope.trim() || undefined)
-          : await ingestGovinfo(q, limit, scope.trim() || undefined);
+      let res: IngestResult;
+      if (source === "courtlistener") {
+        res = await ingestCourtListener(q, limit, scope.trim() || undefined);
+      } else if (source === "govinfo") {
+        res = await ingestGovinfo(q, limit, scope.trim() || undefined);
+      } else {
+        res = await ingestGovData(source, q, limit);
+      }
       setIngestRes(res);
       await refreshStatus();
     } catch (e) {
       setIngestErr(e instanceof Error ? e.message : String(e));
     } finally {
       setIngesting(false);
+    }
+  }
+
+  async function runCitator() {
+    const c = cite.trim();
+    if (!c) return;
+    setCiting(true);
+    setCitErr(null);
+    setCitRes(null);
+    try {
+      setCitRes(await checkCitator(c));
+    } catch (e) {
+      setCitErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCiting(false);
     }
   }
 
@@ -109,10 +181,13 @@ export default function DataView() {
       <div>
         <h2 className="text-xl font-semibold text-slate-800">Data — Corpus Ingestion (admin)</h2>
         <p className="text-sm text-slate-500">
-          Grow the legal corpus from <strong>official public-data APIs only</strong> (CourtListener,
-          govinfo) and discover <strong>public legal datasets</strong> (Hugging Face Hub). No scraping,
-          no bot-protection / rate-limit evasion, and <strong>no PII / people-search data</strong> — PII
-          datasets are flagged and refused.
+          Grow the legal corpus from <strong>official public-data APIs only</strong> — case law
+          (CourtListener), statutes (govinfo), regulations (Federal Register, eCFR), legislation
+          (Congress.gov), and rulemaking dockets (Regulations.gov) — check citations against the{" "}
+          <strong>real CourtListener citation network</strong>, and discover{" "}
+          <strong>public legal datasets</strong> (Hugging Face Hub). No scraping, no bot-protection /
+          rate-limit evasion, and <strong>no PII / people-search data</strong> — PII datasets are
+          flagged and refused.
         </p>
       </div>
 
@@ -153,50 +228,44 @@ export default function DataView() {
         <h3 className="text-sm font-semibold text-slate-700">Corpus expansion</h3>
 
         <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => setSource("courtlistener")}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-              source === "courtlistener"
-                ? "bg-indigo-600 text-white"
-                : "border border-slate-300 text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            CourtListener (case law)
-          </button>
-          <button
-            onClick={() => setSource("govinfo")}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-              source === "govinfo"
-                ? "bg-indigo-600 text-white"
-                : "border border-slate-300 text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            govinfo (statutes / regs)
-          </button>
+          {(Object.keys(SOURCES) as Source[]).map((s) => (
+            <button
+              key={s}
+              onClick={() => {
+                setSource(s);
+                setIngestRes(null);
+                setIngestErr(null);
+              }}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+                source === s
+                  ? "bg-indigo-600 text-white"
+                  : "border border-slate-300 text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {SOURCES[s].label}
+            </button>
+          ))}
         </div>
+
+        <p className="text-xs text-slate-400">{cfg.hint}</p>
 
         <input
           className="w-full rounded-lg border border-slate-300 p-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          placeholder={
-            source === "courtlistener"
-              ? "Topic / query — e.g. FDCPA attorney debt collection"
-              : "Query — e.g. fair debt collection practices"
-          }
+          placeholder={cfg.placeholder}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && void runIngest()}
         />
 
         <div className="flex flex-wrap items-center gap-2">
-          <input
-            className="w-56 rounded-lg border border-slate-300 p-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            placeholder={
-              source === "courtlistener"
-                ? "Jurisdiction (optional) — e.g. ca9, scotus"
-                : "Collection (optional) — USCODE/CFR/PLAW/BILLS"
-            }
-            value={scope}
-            onChange={(e) => setScope(e.target.value)}
-          />
+          {hasScope && (
+            <input
+              className="w-56 rounded-lg border border-slate-300 p-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              placeholder={cfg.scope}
+              value={scope}
+              onChange={(e) => setScope(e.target.value)}
+            />
+          )}
           <label className="text-sm text-slate-600">
             Limit
             <input
@@ -210,7 +279,7 @@ export default function DataView() {
           </label>
           <button
             onClick={() => void runIngest()}
-            disabled={ingesting || (!query.trim() && (source === "courtlistener" || !scope.trim()))}
+            disabled={ingesting || (!query.trim() && !(source === "govinfo" && scope.trim()))}
             className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {ingesting ? "Ingesting…" : "Ingest"}
@@ -255,6 +324,111 @@ export default function DataView() {
                   </li>
                 ))}
               </ul>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ---------------- Citator (citation network) ---------------- */}
+      <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-slate-700">
+          Citator — citation network check{" "}
+          <span className="font-normal text-slate-400">(real CourtListener data)</span>
+        </h3>
+        <p className="text-xs text-slate-500">
+          Validate a case citation and see how often later courts cite it + a transparent treatment
+          signal. A real-data heuristic over public CourtListener data — <strong>not</strong> an
+          authoritative citator (Shepard's / KeyCite).
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            className="min-w-[260px] flex-1 rounded-lg border border-slate-300 p-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            placeholder='Citation — e.g. 514 U.S. 291  or  "Heintz v. Jenkins, 514 U.S. 291"'
+            value={cite}
+            onChange={(e) => setCite(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void runCitator()}
+          />
+          <button
+            onClick={() => void runCitator()}
+            disabled={citing || !cite.trim()}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {citing ? "Checking…" : "Check citation"}
+          </button>
+          <button
+            onClick={() => {
+              setCite("");
+              setCitRes(null);
+              setCitErr(null);
+            }}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
+          >
+            Clear
+          </button>
+        </div>
+
+        {citErr && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{citErr}</div>
+        )}
+
+        {citRes && (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm space-y-2">
+            {!citRes.available ? (
+              <p className="text-slate-600">
+                Citator unavailable: {citRes.reason}. The credibility scorer falls back to its local
+                keyword heuristic.
+              </p>
+            ) : citRes.validated === false ? (
+              <p className="font-medium text-amber-700">{citRes.treatment}</p>
+            ) : (
+              citRes.validated && (
+                <>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <a
+                      href={citRes.validated.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold text-indigo-700 hover:underline"
+                    >
+                      {citRes.validated.case_name}
+                    </a>
+                    <span className="text-xs text-slate-500">
+                      {citRes.validated.date} · {citRes.validated.court}
+                    </span>
+                    {typeof citRes.cited_by_count === "number" && (
+                      <span className="rounded bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                        cited by {citRes.cited_by_count}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-slate-700">{citRes.treatment}</p>
+                  {citRes.citing_cases.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        Recent citing opinions
+                      </p>
+                      <ul className="mt-1 space-y-1 text-xs text-slate-600">
+                        {citRes.citing_cases.map((c, i) => (
+                          <li key={i}>
+                            •{" "}
+                            <a
+                              href={c.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-indigo-600 hover:underline"
+                            >
+                              {c.case_name}
+                            </a>{" "}
+                            {c.date && <span className="text-slate-400">({c.date})</span>}
+                            {c.citation && <span className="text-slate-400"> — {c.citation}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <p className="text-[11px] text-slate-400">Source: {citRes.source}</p>
+                </>
+              )
             )}
           </div>
         )}

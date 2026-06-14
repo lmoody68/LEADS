@@ -31,7 +31,7 @@ import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from . import llm_router, rag
+from . import citator, llm_router, rag
 
 # Weights MUST match §3.3 and sum to 1.0.
 _WEIGHTS: Dict[str, float] = {
@@ -445,5 +445,16 @@ def score(
         "url": source.get("url", ""),
         "legal_section": source.get("legal_section", ""),
     }
-    result["shepardize_heuristic"] = _shepardize_heuristic(source, corroborators)
+    # Treatment / "still good law?" signal. Prefer the REAL CourtListener
+    # citation network (citator) when the source carries a citation; gracefully
+    # fall back to the local-corpus keyword heuristic when the citator is
+    # unavailable (no token / offline / citation not recognized).
+    citation = (source.get("citation") or "").strip()
+    citator_report = citator.treatment_for_citation(citation) if citation else None
+    if citator_report and citator_report.get("available"):
+        result["citator"] = citator_report
+        result["shepardize_heuristic"] = citator_report.get("treatment", "")
+    else:
+        result["citator"] = citator_report  # may be None or an 'unavailable' report
+        result["shepardize_heuristic"] = _shepardize_heuristic(source, corroborators)
     return result

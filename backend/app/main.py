@@ -34,11 +34,13 @@ from app.services import (  # noqa: E402
     agent_memo,
     bkt,
     casefile,
+    citator,
     compliance,
     courtlistener,
     credibility,
     dataset_discovery,
     doc_analysis,
+    govdata,
     ingest,
     llm_router,
     rag,
@@ -49,14 +51,17 @@ from app.services import (  # noqa: E402
 app = FastAPI(
     title="L.E.A.D.S. API",
     description=(
-        "Legal Education & Analytical Deep-Search — v1.1.0 (Phase 7: Automated "
-        "Public-Legal-Data Ingestion). Deep-research RAG, agentic research memo, "
-        "source-credibility scoring, compliance advisor, BKT tutor + practice "
-        "sandbox, document analysis, and official-API corpus expansion + public "
-        "legal-dataset discovery (CourtListener / govinfo / Hugging Face Hub — "
-        "official APIs only, public legal data only, no PII / scraping / evasion)."
+        "Legal Education & Analytical Deep-Search — v1.2.0 (Phase 8: expanded "
+        "federal-data connectors + real citation network). Deep-research RAG, "
+        "agentic research memo, source-credibility scoring with a real "
+        "CourtListener citator, compliance advisor, BKT tutor + practice sandbox, "
+        "document analysis, and official-API corpus expansion across case law "
+        "(CourtListener), statutes (govinfo), regulations (Federal Register, "
+        "eCFR), legislation (Congress.gov), and rulemaking dockets "
+        "(Regulations.gov) + public legal-dataset discovery (Hugging Face Hub) — "
+        "official APIs only, public legal data only, no PII / scraping / evasion."
     ),
-    version="1.1.0",
+    version="1.2.0",
 )
 
 
@@ -185,17 +190,28 @@ class DatasetIngestRequest(BaseModel):
     source: str = "huggingface"
 
 
+# --- Phase 8: Expanded federal-data connectors + citator ---------------------
+class GovDataIngestRequest(BaseModel):
+    query: str
+    limit: int = 5
+
+
+class CitatorRequest(BaseModel):
+    citation: str  # e.g. "514 U.S. 291" or "Heintz v. Jenkins, 514 U.S. 291"
+
+
 # --- Routes ------------------------------------------------------------------
 @app.get("/api/health")
 def health() -> dict:
     return {
         "status": "ok",
         "service": "L.E.A.D.S.",
-        "phase": 7,
-        "version": "1.1.0",
+        "phase": 8,
+        "version": "1.2.0",
         "llm_providers": llm_router.available_providers(),
         "corpus_size": rag.get_collection().count(),
         "courtlistener": courtlistener.availability(),
+        "citator": {"available": citator.has_token()},
     }
 
 
@@ -549,3 +565,72 @@ def datasets_ingest_route(req: DatasetIngestRequest) -> dict:
     if "error" in out:
         raise HTTPException(status_code=400, detail=out["error"])
     return out
+
+
+# --- Phase 8: Expanded federal-data connectors (MasterBuildPlan §3.8) ---------
+# Same guardrails as Phase 7: OFFICIAL public APIs only, public legal text only,
+# honest User-Agent + sane rate limits + graceful 429 backoff, NO scraping /
+# CAPTCHA / proxy / rate-limit evasion, NO PII / people-search. See govdata.py.
+@app.post("/api/ingest/federalregister")
+def ingest_federal_register_route(req: GovDataIngestRequest) -> dict:
+    """
+    Ingest Federal Register documents (agency final/proposed rules + notices)
+    matching a query — the actual rules implementing statutes like FDCPA/FCRA.
+    KEYLESS official API. Prefers full plain text; dedupes by citation.
+    """
+    if not req.query.strip():
+        raise HTTPException(status_code=400, detail="query is required")
+    _enforce_len(req.query, "query")
+    return govdata.ingest_federal_register(req.query.strip(), limit=req.limit)
+
+
+@app.post("/api/ingest/ecfr")
+def ingest_ecfr_route(req: GovDataIngestRequest) -> dict:
+    """
+    Ingest Code of Federal Regulations sections matching a query via the eCFR
+    search + versioner APIs (node-scoped full text). KEYLESS official API.
+    """
+    if not req.query.strip():
+        raise HTTPException(status_code=400, detail="query is required")
+    _enforce_len(req.query, "query")
+    return govdata.ingest_ecfr(req.query.strip(), limit=req.limit)
+
+
+@app.post("/api/ingest/congress")
+def ingest_congress_route(req: GovDataIngestRequest) -> dict:
+    """
+    Ingest Congress.gov bills matching a query (with their latest CRS summary as
+    text) for legislative-history research. Uses the free api.data.gov key.
+    """
+    if not req.query.strip():
+        raise HTTPException(status_code=400, detail="query is required")
+    _enforce_len(req.query, "query")
+    return govdata.ingest_congress(req.query.strip(), limit=req.limit)
+
+
+@app.post("/api/ingest/regulations")
+def ingest_regulations_route(req: GovDataIngestRequest) -> dict:
+    """
+    Ingest Regulations.gov rulemaking documents matching a query. Uses the free
+    api.data.gov key; page size is clamped to the API minimum of 5.
+    """
+    if not req.query.strip():
+        raise HTTPException(status_code=400, detail="query is required")
+    _enforce_len(req.query, "query")
+    return govdata.ingest_regulations(req.query.strip(), limit=req.limit)
+
+
+# --- Phase 8: Real citation network (MasterBuildPlan §3.3 enhancement) --------
+@app.post("/api/citator")
+def citator_route(req: CitatorRequest) -> dict:
+    """
+    Look up a citation in the CourtListener citation network and return a REAL
+    treatment report: validation (does it resolve to a known case?), cited-by
+    count (influence), recent citing cases, and a transparent treatment signal.
+    Gracefully reports 'unavailable' (so the UI can fall back) with no token /
+    offline. Official CourtListener API only — public court data, no scraping.
+    """
+    if not req.citation.strip():
+        raise HTTPException(status_code=400, detail="citation is required")
+    _enforce_len(req.citation, "citation")
+    return citator.treatment_for_citation(req.citation.strip())

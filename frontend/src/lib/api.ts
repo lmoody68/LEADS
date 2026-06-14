@@ -164,8 +164,35 @@ export interface CredibilityResponse {
   flags: string[];
   corroboration: { agreeing: string[]; conflicting: string[] };
   shepardize_heuristic: string;
+  citator?: CitatorResult | null;
   provider: string;
   error?: string;
+}
+
+// --- Phase 8: Real citation network (CourtListener citator) -----------------
+export interface CitingCase {
+  case_name: string;
+  date: string;
+  citation: string;
+  url: string;
+  snippet: string;
+}
+export interface CitatorResult {
+  available: boolean;
+  citation: string;
+  reason?: string;
+  validated:
+    | { case_name: string; date: string; court: string; url: string; cluster_id: number; normalized: string[] }
+    | false
+    | null;
+  cited_by_count: number | null;
+  citing_cases: CitingCase[];
+  treatment: string;
+  source: string;
+}
+
+export function checkCitator(citation: string): Promise<CitatorResult> {
+  return post<CitatorResult>("/citator", { citation });
 }
 
 export interface CredibilityInput {
@@ -503,6 +530,17 @@ export function ingestGovinfo(
     collection: collection || undefined,
     limit,
   });
+}
+
+// --- Phase 8: expanded federal-data connectors (all take query + limit) -----
+export type GovDataEndpoint = "federalregister" | "ecfr" | "congress" | "regulations";
+
+export function ingestGovData(
+  endpoint: GovDataEndpoint,
+  query: string,
+  limit: number
+): Promise<IngestResult> {
+  return post<IngestResult>(`/ingest/${endpoint}`, { query, limit });
 }
 
 export function ingestStatus(): Promise<IngestStatus> {

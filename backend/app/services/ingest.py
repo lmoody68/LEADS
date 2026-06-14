@@ -130,13 +130,23 @@ def _norm_key(value: str) -> str:
     return re.sub(r"\s+", " ", (value or "").strip().lower())
 
 
+# Redact secrets (api_key / api-key / token) from any URL before it is logged,
+# so a real api.data.gov key embedded in a query string never reaches stdout.
+_SECRET_QS_RE = re.compile(r"((?:api[-_]?key|token)=)[^&\s]+", re.IGNORECASE)
+
+
+def _redact(url: str) -> str:
+    return _SECRET_QS_RE.sub(r"\1***", url or "")
+
+
 # --- HTTP helper (graceful, honest) -----------------------------------------
 def _get(client: httpx.Client, url: str, *, kind: str = "GET", json_body: Any = None) -> Optional[httpx.Response]:
     """
     Polite GET/POST. Returns the Response, or None on error / rate-limit (429).
 
     GUARDRAIL: on 429 we BACK OFF and return None (graceful) — we never retry-
-    hammer or attempt to evade the limit.
+    hammer or attempt to evade the limit. Any api_key/token in the URL is
+    REDACTED before logging.
     """
     try:
         time.sleep(_POLITE_DELAY)
@@ -146,13 +156,13 @@ def _get(client: httpx.Client, url: str, *, kind: str = "GET", json_body: Any = 
         else:
             resp = client.get(url, headers=headers, timeout=_TIMEOUT, follow_redirects=True)
     except Exception as exc:
-        print(f"[ingest] request failed for {url}: {exc}")
+        print(f"[ingest] request failed for {_redact(url)}: {exc}")
         return None
     if resp.status_code == 429:
-        print(f"[ingest] HTTP 429 rate-limited at {url} — backing off gracefully (no evasion).")
+        print(f"[ingest] HTTP 429 rate-limited at {_redact(url)} — backing off gracefully (no evasion).")
         return None
     if resp.status_code != 200:
-        print(f"[ingest] HTTP {resp.status_code} for {url}: skipping gracefully.")
+        print(f"[ingest] HTTP {resp.status_code} for {_redact(url)}: skipping gracefully.")
         return None
     return resp
 
@@ -480,6 +490,14 @@ def status() -> Dict[str, Any]:
             url = (meta.get("url") or "").lower()
             if doc_type == "opinion" or "courtlistener.com" in url:
                 bucket = "courtlistener (case law)"
+            elif "federalregister.gov" in url or cite.startswith("fed. reg"):
+                bucket = "federal register (rules)"
+            elif "ecfr.gov" in url or "cfr §" in cite or "cfr part" in cite or cite.endswith("cfr"):
+                bucket = "eCFR (regulations)"
+            elif "congress.gov" in url or doc_type == "bill":
+                bucket = "congress.gov (legislation)"
+            elif "regulations.gov" in url or cite.startswith("regulations.gov"):
+                bucket = "regulations.gov (dockets)"
             elif "govinfo.gov" in url or cite.startswith(("uscode", "cfr", "plaw", "bills")):
                 bucket = "govinfo (statutes/regs)"
             else:
