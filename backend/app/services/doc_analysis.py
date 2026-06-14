@@ -390,7 +390,11 @@ _PII_PATTERNS: List[Tuple[str, re.Pattern, str]] = [
      "Financial account number."),
     ("Routing number", re.compile(r"\b(?:routing|aba)[.\s#:]*\d{9}\b", re.IGNORECASE),
      "Bank routing number."),
-    ("Phone", re.compile(r"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b"),
+    # NOTE: no leading "\b" — a word boundary fails immediately before a literal
+    # "(" so it would drop the leading paren of "(314) 555-0142". Use digit
+    # look-around instead so the whole "(314) 555-0142" span (paren included) is
+    # captured without grabbing a longer adjacent digit run.
+    ("Phone", re.compile(r"(?<!\d)(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}(?!\d)"),
      "Phone number — personal contact information."),
     ("Email", re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
      "Email address — personal contact information."),
@@ -406,6 +410,11 @@ def _digit_count(s: str) -> int:
     return sum(c.isdigit() for c in s)
 
 
+def _digit_span(s: str) -> str:
+    """Normalized digit-only key for a match (strips labels/format/punctuation)."""
+    return "".join(c for c in s if c.isdigit())
+
+
 def _regex_redactions(per_doc: List[Dict[str, str]]) -> List[Dict[str, str]]:
     out: List[Dict[str, str]] = []
     for d in per_doc:
@@ -415,6 +424,11 @@ def _regex_redactions(per_doc: List[Dict[str, str]]) -> List[Dict[str, str]]:
         # bare digit run isn't double-reported (e.g. an account number that the
         # phone pattern would also match). Patterns are ordered most→least specific.
         claimed: List[Tuple[int, int]] = []
+        # Dedup by NORMALIZED DIGIT-SPAN across ALL types so one number isn't
+        # reported under two PII types (e.g. a labeled "account 4111…" and the
+        # bare card pattern matching the same 16 digits). The first (most-specific)
+        # pattern to claim a digit-span wins; later types skip that same number.
+        seen_digits: set = set()
         for ptype, pat, reason in _PII_PATTERNS:
             for m in pat.finditer(text):
                 span = m.group(0).strip()
@@ -427,10 +441,16 @@ def _regex_redactions(per_doc: List[Dict[str, str]]) -> List[Dict[str, str]]:
                     not (end <= cs or start >= ce) for cs, ce in claimed
                 ):
                     continue
+                digits = _digit_span(span)
+                # Cross-type dedup: same number already reported under another type.
+                if digits and digits in seen_digits:
+                    continue
                 key = (ptype, span)
                 if key in seen:
                     continue
                 seen.add(key)
+                if digits:
+                    seen_digits.add(digits)
                 claimed.append((start, end))
                 out.append({
                     "type": ptype,

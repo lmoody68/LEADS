@@ -17,16 +17,22 @@ fully functional with zero API keys.
 """
 from __future__ import annotations
 
+import logging
 import os
 from typing import Optional, Tuple
 
 import httpx
 
+logger = logging.getLogger("leads.llm_router")
+
 # Sensible free-tier defaults; overridable via env.
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-# Anthropic: per the claude-api skill, the current flagship model id.
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-8")
+# Anthropic default is a low-cost Haiku model (aligns with .env.example). The
+# Anthropic tier is last in the cascade and only reached if Groq + Gemini both
+# fail, so the default favors COST. Override with ANTHROPIC_MODEL for a stronger
+# model. (claude-3-5-haiku-latest tracks the current Haiku release.)
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-latest")
 
 _TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 
@@ -127,7 +133,21 @@ def synthesize(system: str, user: str) -> Tuple[Optional[str], str]:
             text = _PROVIDERS[name](system, user)
             if text:
                 return text, name
-        except Exception:
-            # Try the next provider in the cascade; never crash on a provider error.
+        except Exception as exc:  # noqa: BLE001 — cascade must never crash a request
+            # Observability: log WHY a provider was skipped (error / throttle /
+            # 429) before falling through to the next provider, instead of
+            # silently swallowing it. For an HTTP error, surface the status code.
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            detail = f"HTTP {status}" if status else type(exc).__name__
+            logger.warning(
+                "LLM provider '%s' (%s) failed: %s — falling through to next provider.",
+                name,
+                _model_for(name),
+                detail,
+            )
             continue
     return None, "extractive (no LLM key)"
+
+
+def _model_for(name: str) -> str:
+    return {"groq": GROQ_MODEL, "gemini": GEMINI_MODEL, "anthropic": ANTHROPIC_MODEL}.get(name, "?")

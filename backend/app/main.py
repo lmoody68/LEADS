@@ -47,11 +47,29 @@ from app.services import (  # noqa: E402
 app = FastAPI(
     title="L.E.A.D.S. API",
     description=(
-        "Legal Education & Analytical Deep-Search — Phase 5 "
-        "(Enhanced Document Analysis: relationships, timeline, patterns, redaction)"
+        "Legal Education & Analytical Deep-Search — v1.0.0 (Phase 6: Polish & "
+        "Portfolio). Deep-research RAG, agentic research memo, source-credibility "
+        "scoring, compliance advisor, BKT tutor + practice sandbox, and document "
+        "analysis (relationships, timeline, patterns, redaction)."
     ),
-    version="0.6.0",
+    version="1.0.0",
 )
+
+
+# Hardening: cap free-text request bodies. An unbounded prompt is a cost and
+# prompt-injection risk, so oversized inputs are rejected with HTTP 413 (Payload
+# Too Large) rather than forwarded to the LLM router. 8000 chars comfortably
+# covers a detailed scenario / question while bounding token cost.
+_MAX_INPUT_CHARS = 8000
+
+
+def _enforce_len(value: str, field: str) -> str:
+    if value is not None and len(value) > _MAX_INPUT_CHARS:
+        raise HTTPException(
+            status_code=413,
+            detail=f"{field} is too long ({len(value)} chars); max is {_MAX_INPUT_CHARS}.",
+        )
+    return value
 
 
 def _session_id(x_session_id: str | None, body_session_id: str | None = None) -> str:
@@ -151,8 +169,8 @@ def health() -> dict:
     return {
         "status": "ok",
         "service": "L.E.A.D.S.",
-        "phase": 5,
-        "version": "0.6.0",
+        "phase": 6,
+        "version": "1.0.0",
         "llm_providers": llm_router.available_providers(),
         "corpus_size": rag.get_collection().count(),
         "courtlistener": courtlistener.availability(),
@@ -171,6 +189,7 @@ def ask(req: AskRequest) -> dict:
     """
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="question is required")
+    _enforce_len(req.question, "question")
     return rag.answer(req.question, deep=req.deep)
 
 
@@ -188,6 +207,7 @@ def memo(req: MemoRequest) -> dict:
     """
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="question is required")
+    _enforce_len(req.question, "question")
     result = agent_memo.generate_memo(req.question, deep=req.deep)
     # Record a compact entry in the in-memory history.
     _MEMO_HISTORY.append(
@@ -228,6 +248,7 @@ def compliance_analyze(req: ComplianceRequest) -> dict:
     """
     if not req.scenario.strip():
         raise HTTPException(status_code=400, detail="scenario is required")
+    _enforce_len(req.scenario, "scenario")
     return compliance.analyze(req.scenario)
 
 
@@ -248,6 +269,9 @@ def credibility_score(req: CredibilityRequest) -> dict:
             status_code=400,
             detail="provide a source_id, or a title/citation/text to score",
         )
+    _enforce_len(req.text or "", "text")
+    _enforce_len(req.title or "", "title")
+    _enforce_len(req.citation or "", "citation")
     return credibility.score(
         source_id=req.source_id,
         title=req.title,

@@ -87,16 +87,37 @@ def resolve_source(
     title = (title or "").strip()
     if not (text or citation or title):
         return None
+    # Classify the pasted source's type from EVIDENCE, never by default:
+    #   * opinion  — reads like a case (v., reporter cite, holding language)
+    #   * statute  — carries a real statutory citation (U.S.C. / C.F.R. / § …)
+    #   * source   — NO establishable authority (anonymous blog / no citation).
+    # A bare pasted blurb with no citation must NOT be treated as a primary
+    # authority; it defaults to a non-primary "source" → secondary / low tier.
+    if _looks_like_opinion(citation, text):
+        doc_type = "opinion"
+    elif _has_statutory_citation(citation):
+        doc_type = "statute"
+    else:
+        doc_type = "source"
     return {
         "source_title": title or (citation or "Pasted source"),
         "citation": citation,
         "snippet": text,
-        "doc_type": "opinion" if _looks_like_opinion(citation, text) else "statute",
+        "doc_type": doc_type,
         "court": "",
         "date": "",
         "url": "",
         "legal_section": "",
     }
+
+
+# A real statutory/regulatory citation establishes primary authority. Anything
+# without one (an anonymous blog, an unsourced claim) is not primary.
+_STATUTE_CITE_RE = re.compile(r"\bU\.?\s?S\.?\s?C\.?\b|\bC\.?\s?F\.?\s?R\.?\b|§", re.IGNORECASE)
+
+
+def _has_statutory_citation(citation: str) -> bool:
+    return bool(_STATUTE_CITE_RE.search(citation or ""))
 
 
 def _lookup_by_id(source_id: str) -> Optional[Dict[str, Any]]:
@@ -247,18 +268,32 @@ def _score_llm(
 def _score_deterministic(
     source: Dict[str, Any], corroborators: List[Dict[str, Any]]
 ) -> Dict[str, Any]:
-    doc_type = source.get("doc_type", "statute")
+    doc_type = source.get("doc_type", "source")
     is_primary = doc_type in ("statute", "opinion")
-    citation = source.get("citation", "")
+    citation = (source.get("citation", "") or "").strip()
     text = source.get("snippet", "")
+    # A source with no establishable authority (anonymous blog / no citation) is
+    # the weakest case: it must tier SECONDARY with a LOW authority score, never
+    # primary. Only an explicit statute/opinion (with citation) is primary.
+    no_authority = not is_primary and not citation
 
-    # Authority: primary statute/opinion scores high; otherwise mid.
-    authority = 90 if is_primary else 45
-    auth_rationale = (
-        f"Classified as PRIMARY authority ({'statute' if doc_type=='statute' else 'court opinion'})."
-        if is_primary
-        else "Not identifiable as primary authority from metadata — treated as secondary."
-    )
+    # Authority: primary statute/opinion scores high; an unsourced/anonymous
+    # source scores low; an identifiable-but-secondary source scores mid.
+    if is_primary:
+        authority = 90
+        auth_rationale = (
+            f"Classified as PRIMARY authority ({'statute' if doc_type == 'statute' else 'court opinion'})."
+        )
+    elif no_authority:
+        authority = 25
+        auth_rationale = (
+            "No establishable authority — no citation and no primary-authority "
+            "signals (reads like an anonymous/unsourced source). Treated as "
+            "SECONDARY with low authority."
+        )
+    else:
+        authority = 45
+        auth_rationale = "Not identifiable as primary authority from metadata — treated as secondary."
 
     # Currency: from a parsed date if present; statutes (no date) get a neutral score.
     date = source.get("date", "")

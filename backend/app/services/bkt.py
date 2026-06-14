@@ -161,7 +161,10 @@ MODULE_ORDER: List[str] = [
 _sessions: Dict[str, Dict[str, Any]] = {}
 _lock = threading.Lock()
 
-# Gitignored persistence dir (see .gitignore addition for bkt_state/).
+# Gitignored persistence dir. __file__ is app/services/bkt.py, so three dirnames
+# up resolves to the backend root → backend/bkt_state/. That path is ignored by
+# BOTH the repo-root .gitignore (**/bkt_state/) and backend/.gitignore (bkt_state/),
+# so per-session mastery state is never committed (defense-in-depth).
 _STATE_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "bkt_state"
 )

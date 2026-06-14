@@ -19,6 +19,11 @@ uploads/
 # respect rate limits; never published)
 .cache/
 
+# BKT per-session mastery state (Phase 4) — anonymous probability vectors keyed
+# by session id; local only, never published. Also covered by the repo-root
+# .gitignore; duplicated here as defense-in-depth.
+bkt_state/
+
 # Server logs
 server.log
 *.log

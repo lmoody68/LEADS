@@ -99,14 +99,17 @@ def _citations_from_hits(hits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 # Map a few known U.S.C. citations to a Cornell LII URL for the UI (best-effort).
-_USC_RE = re.compile(r"(\d+)\s*U\.?S\.?C\.?\s*§*\s*(\d+)")
+# Capture the section number PLUS any trailing statutory subsection letter(s)
+# (e.g. "§ 1681b" → section "1681b") so the URL points at the right provision —
+# Cornell LII addresses these as /uscode/text/15/1681b, not /15/1681.
+_USC_RE = re.compile(r"(\d+)\s*U\.?S\.?C\.?\s*§*\s*(\d+[a-z]*)", re.IGNORECASE)
 
 
 def _cornell_url(citation: str) -> str:
     m = _USC_RE.search(citation or "")
     if not m:
         return ""
-    title, section = m.group(1), m.group(2)
+    title, section = m.group(1), m.group(2).lower()
     return f"https://www.law.cornell.edu/uscode/text/{title}/{section}"
 
 
@@ -252,7 +255,10 @@ def _analyze_deterministic(scenario: str, hits: List[Dict[str, Any]]) -> Dict[st
             "consented data, or a statutorily-permitted channel to obtain the information."
         )
 
-    verdict = "no" if is_dppa and ("confront" in s or "ex" in s or "harass" in s or "stalk" in s) else "depends"
+    # Word-boundary match so "ex" (former partner) only triggers on the standalone
+    # word — not on substrings inside "expense", "next", "complex", "context", etc.
+    personal_target = bool(re.search(r"\b(?:ex|confront|harass|stalk)\b", s))
+    verdict = "no" if is_dppa and personal_target else "depends"
     if verdict == "no":
         explanation = (
             "As framed, the method is impermissible: it seeks DMV personal information "
