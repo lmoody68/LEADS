@@ -1,0 +1,133 @@
+"""
+LLM Router — free-first multi-provider cascade for L.E.A.D.S.
+
+Cascade order: Groq -> Gemini -> Claude (Anthropic). Keys are read from the
+environment (GROQ_API_KEY / GEMINI_API_KEY / ANTHROPIC_API_KEY).
+
+GUARDRAIL: This router is a thin pass-through. It sends only the prompt the
+caller built (a citation-grounded question over retrieved public/licensed legal
+passages, or user-uploaded case-file text). No provider is asked to train on,
+retain, or learn from any data — these are stateless completion calls.
+
+CRITICAL DESIGN POINT: if NO provider key is configured, or every configured
+provider fails, `synthesize()` returns (None, "extractive (no LLM key)"). The
+caller (rag.answer / casefile.answer) then degrades gracefully to an EXTRACTIVE
+answer built from the top retrieved passages + their citations. The app stays
+fully functional with zero API keys.
+"""
+from __future__ import annotations
+
+import os
+from typing import Optional, Tuple
+
+import httpx
+
+# Sensible free-tier defaults; overridable via env.
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+# Anthropic: per the claude-api skill, the current flagship model id.
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-8")
+
+_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
+
+
+def available_providers() -> list[str]:
+    """Return the list of providers that have a key configured (cascade order)."""
+    out = []
+    if os.getenv("GROQ_API_KEY"):
+        out.append("groq")
+    if os.getenv("GEMINI_API_KEY"):
+        out.append("gemini")
+    if os.getenv("ANTHROPIC_API_KEY"):
+        out.append("anthropic")
+    return out
+
+
+def _call_groq(system: str, user: str) -> str:
+    key = os.environ["GROQ_API_KEY"]
+    resp = httpx.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        json={
+            "model": GROQ_MODEL,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "temperature": 0.1,
+        },
+        timeout=_TIMEOUT,
+    )
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"].strip()
+
+
+def _call_gemini(system: str, user: str) -> str:
+    key = os.environ["GEMINI_API_KEY"]
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{GEMINI_MODEL}:generateContent?key={key}"
+    )
+    resp = httpx.post(
+        url,
+        headers={"Content-Type": "application/json"},
+        json={
+            "system_instruction": {"parts": [{"text": system}]},
+            "contents": [{"role": "user", "parts": [{"text": user}]}],
+            "generationConfig": {"temperature": 0.1},
+        },
+        timeout=_TIMEOUT,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+
+def _call_anthropic(system: str, user: str) -> str:
+    """Anthropic Messages API via raw HTTP (no SDK dependency in Phase 0)."""
+    key = os.environ["ANTHROPIC_API_KEY"]
+    resp = httpx.post(
+        "https://api.anthropic.com/v1/messages",
+        headers={
+            "x-api-key": key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": ANTHROPIC_MODEL,
+            "max_tokens": 1500,
+            "system": system,
+            "messages": [{"role": "user", "content": user}],
+        },
+        timeout=_TIMEOUT,
+    )
+    resp.raise_for_status()
+    blocks = resp.json().get("content", [])
+    text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
+    return text.strip()
+
+
+_PROVIDERS = {
+    "groq": _call_groq,
+    "gemini": _call_gemini,
+    "anthropic": _call_anthropic,
+}
+
+
+def synthesize(system: str, user: str) -> Tuple[Optional[str], str]:
+    """
+    Run the free-first cascade. Returns (answer_text, provider_label).
+
+    On success: (text, "groq" | "gemini" | "anthropic").
+    On total failure or no keys: (None, "extractive (no LLM key)") so the
+    caller can fall back to an extractive, still-cited answer.
+    """
+    for name in available_providers():
+        try:
+            text = _PROVIDERS[name](system, user)
+            if text:
+                return text, name
+        except Exception:
+            # Try the next provider in the cascade; never crash on a provider error.
+            continue
+    return None, "extractive (no LLM key)"

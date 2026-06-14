@@ -1,0 +1,23 @@
+{
+  "source_title": "Gramm-Leach-Bliley Act (GLBA) — Obligations with respect to disclosures of personal information",
+  "citation": "15 U.S.C. § 6802",
+  "jurisdiction": "United States (federal)",
+  "authority": "primary — statute",
+  "sections": [
+    {
+      "section": "15 U.S.C. § 6802(a)",
+      "heading": "Notice requirements",
+      "text": "Except as otherwise provided in this subchapter, a financial institution may not, directly or through any affiliate, disclose to a nonaffiliated third party any nonpublic personal information, unless such financial institution provides or has provided to the consumer a notice that complies with section 6803 of this title."
+    },
+    {
+      "section": "15 U.S.C. § 6802(b)",
+      "heading": "Opt out",
+      "text": "A financial institution may not disclose nonpublic personal information to a nonaffiliated third party unless — (A) such financial institution clearly and conspicuously discloses to the consumer, in writing or in electronic form or other form permitted by the regulations prescribed under section 6804 of this title, that such information may be disclosed to such third party; (B) the consumer is given the opportunity, before the time that such information is initially disclosed, to direct that such information not be disclosed to such third party; and (C) the consumer is given an explanation of how the consumer can exercise that nondisclosure option."
+    },
+    {
+      "section": "15 U.S.C. § 6802(e)",
+      "heading": "General exceptions",
+      "text": "Subsections (a) and (b) shall not prohibit the disclosure of nonpublic personal information — (1) as necessary to effect, administer, or enforce a transaction requested or authorized by the consumer, or in connection with servicing or processing a financial product or service requested or authorized by the consumer; ... (3) to protect the confidentiality or security of the financial institution's records pertaining to the consumer, the service or product, or the transaction therein; to protect against or prevent actual or potential fraud, unauthorized transactions, claims, or other liability; ... or (8) to comply with Federal, State, or local laws, rules, and other applicable legal requirements; to comply with a properly authorized civil, criminal, or regulatory investigation, or subpoena or summons by Federal, State, or local authorities; or to respond to judicial process or government regulatory authorities having jurisdiction over the financial institution for examination, compliance, or other purposes as authorized by law."
+    }
+  ]
+}

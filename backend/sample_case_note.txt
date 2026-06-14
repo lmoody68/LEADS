@@ -1,0 +1,17 @@
+SYNTHETIC CASE NOTE (test fixture — fictional, no real PII)
+
+Matter: Acme Recovery Services LLC v. Jordan Avery
+File opened: March 3, 2026
+Investigator: Dana Cole, Northbridge Investigations (St. Louis, Missouri)
+
+Summary:
+On February 14, 2026, Acme Recovery Services LLC retained Northbridge
+Investigations to locate the current employer of debtor Jordan Avery in
+connection with a post-judgment collection matter. Jordan Avery was last known
+to reside in Springfield, Illinois, and previously worked for Brightline
+Logistics Inc.
+
+Compliance note: Counsel flagged 15 U.S.C. 1692c(b) and the FCRA permissible-
+purpose rules at 15 U.S.C. 1681b before any third-party contact. A status call
+is scheduled for April 10, 2026 with the creditor's attorney, Morgan Pierce of
+Pierce & Vance LLP.

@@ -1,0 +1,21 @@
+# Python
+**/__pycache__/
+*.py[cod]
+**/.venv/
+**/venv/
+**/*.egg-info/
+
+# Environment / secrets
+**/.env
+
+# ChromaDB persistent store (local legal corpus + privileged uploads — never publish)
+**/chroma_db/
+**/uploads/
+
+# Node / Vite
+**/node_modules/
+**/dist/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+chromadb
+pypdf
+pdfplumber
+python-multipart
+httpx
+python-dotenv
+# OCR is OPTIONAL and import-guarded in code (requires a Tesseract binary on PATH).
+# Uncomment to enable image OCR for the Document Analyzer:
+# pytesseract
+# Pillow
