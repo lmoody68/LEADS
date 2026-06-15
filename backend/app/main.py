@@ -20,10 +20,11 @@ GUARDRAILS (NON-NEGOTIABLE — baked into the design):
 from __future__ import annotations
 
 import os
+import re
 import uuid
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -47,6 +48,7 @@ from app.services import (  # noqa: E402
     govdata,
     ingest,
     llm_router,
+    pdf,
     plainlang,
     rag,
     reranker,
@@ -273,6 +275,12 @@ class SrsReviewRequest(BaseModel):
     card_id: str
     rating: str
     session_id: str | None = None
+
+
+class ExportPdfRequest(BaseModel):
+    title: str
+    markdown: str
+    filename: str | None = None
 
 
 # --- Routes ------------------------------------------------------------------
@@ -844,6 +852,24 @@ def classifier_predict_route(req: ClassifyRequest) -> dict:
     if "error" in out:
         raise HTTPException(status_code=400, detail=out["error"])
     return out
+
+
+# --- Phase 8: PDF export (memo / case brief) ---------------------------------
+@app.post("/api/export/pdf")
+def export_pdf_route(req: ExportPdfRequest) -> Response:
+    """Render a title + markdown body to a downloadable PDF."""
+    if not req.markdown.strip():
+        raise HTTPException(status_code=400, detail="markdown is required")
+    _enforce_len(req.title or "", "title")
+    if len(req.markdown) > 60000:
+        raise HTTPException(status_code=413, detail="document too long to export")
+    data = pdf.render(req.title, req.markdown)
+    name = re.sub(r"[^A-Za-z0-9_.-]+", "_", (req.filename or req.title or "leads-export")).strip("_")[:60] or "leads-export"
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{name}.pdf"'},
+    )
 
 
 # --- Phase 8: Assistant (agentic orchestrator over all tools) -----------------

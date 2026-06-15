@@ -23,6 +23,8 @@ joblib
 # MCP server (backend/mcp_server.py) — exposes the app as MCP tools for Claude
 # Desktop / Claude Code. Optional; only needed to run the MCP wrapper.
 mcp[cli]
+# PDF export of memos / case briefs (pure-Python, no system libs).
+fpdf2
 # OPTIONAL Phase 7 deps — lazy/guarded imports; the app boots fine WITHOUT them.
 #   datasets : stream a small sample of a public legal dataset into the corpus.
 #   kaggle   : discover Kaggle legal datasets (only if kaggle.json creds present).

@@ -96,17 +96,33 @@ def list_decks(session: str) -> Dict[str, Any]:
 
 
 def due(session: str, deck: str = "default", limit: int = 20) -> Dict[str, Any]:
-    deck = (deck or "default").strip() or "default"
-    d = cache.get(_deck_key(session, deck))
-    cards = d.get("cards", []) if isinstance(d, dict) else []
+    """
+    Due cards for a deck, or for ALL decks when deck is 'all'/'__all__'/empty.
+    Each returned card carries its `deck` so the caller can review it correctly.
+    """
+    deck = (deck or "").strip()
     today = _today_iso()
-    duecards = sorted((c for c in cards if c.get("due", today) <= today), key=lambda c: c.get("due", today))
-    limit = max(1, min(int(limit or 20), 100))
+    scan = _load_index(session) if deck.lower() in ("", "all", "__all__") else [deck]
+    total = 0
+    duecards: List[Dict[str, Any]] = []
+    for name in scan:
+        d = cache.get(_deck_key(session, name))
+        if not isinstance(d, dict):
+            continue
+        cards = d.get("cards", [])
+        total += len(cards)
+        for c in cards:
+            if c.get("due", today) <= today:
+                duecards.append(
+                    {"id": c["id"], "front": c["front"], "back": c["back"], "deck": name, "_due": c.get("due", today)}
+                )
+    duecards.sort(key=lambda c: c["_due"])
+    limit = max(1, min(int(limit or 20), 200))
     return {
-        "deck": deck,
+        "deck": deck or "all",
         "due_count": len(duecards),
-        "total": len(cards),
-        "cards": [{"id": c["id"], "front": c["front"], "back": c["back"]} for c in duecards[:limit]],
+        "total": total,
+        "cards": [{"id": c["id"], "front": c["front"], "back": c["back"], "deck": c["deck"]} for c in duecards[:limit]],
     }
 
 

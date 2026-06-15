@@ -97,14 +97,16 @@ function Flashcards() {
   const [flipped, setFlipped] = useState<Record<number, boolean>>({});
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [deckName, setDeckName] = useState("");
 
   async function addToDeck() {
     if (!res || res.cards.length === 0) return;
     setSaving(true);
     setSaveMsg(null);
     try {
-      const r = await srsSave(res.cards);
-      setSaveMsg(`Added ${r.added} new card${r.added === 1 ? "" : "s"} to your review deck (${r.total} total). Study them in the Review tab.`);
+      const deck = (deckName.trim() || topic.trim() || "default").slice(0, 60);
+      const r = await srsSave(res.cards, deck);
+      setSaveMsg(`Added ${r.added} new card${r.added === 1 ? "" : "s"} to deck “${r.deck}” (${r.total} total). Study it in the Review tab.`);
     } catch (e) {
       setSaveMsg(e instanceof Error ? e.message : String(e));
     } finally {
@@ -160,9 +162,15 @@ function Flashcards() {
       {res && res.cards.length > 0 && (
         <>
           <div className="flex flex-wrap items-center gap-2">
+            <input
+              className="w-44 rounded-lg border border-slate-300 p-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              placeholder={`Deck (${topic.trim() || "default"})`}
+              value={deckName}
+              onChange={(e) => setDeckName(e.target.value)}
+            />
             <button onClick={() => void addToDeck()} disabled={saving}
               className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
-              {saving ? "Adding…" : "➕ Add to review deck"}
+              {saving ? "Adding…" : "➕ Add to deck"}
             </button>
             {saveMsg && <span className="text-xs text-slate-500">{saveMsg}</span>}
           </div>
@@ -192,6 +200,7 @@ function Review() {
   const { err, setErr } = useErr();
   const [done, setDone] = useState(false);
   const [stats, setStats] = useState<SrsStats | null>(null);
+  const [deck, setDeck] = useState("all");
 
   async function refreshStats() {
     try {
@@ -201,14 +210,15 @@ function Review() {
     }
   }
 
-  async function load() {
+  async function load(which?: string) {
+    const target = which ?? deck;
     setLoading(true);
     setErr(null);
     setDone(false);
     try {
       const dk = await srsDecks();
       setDecks(dk.decks);
-      const due = await srsDue("default", 50);
+      const due = await srsDue(target, 100);
       setQueue(due.cards);
       setIdx(0);
       setRevealed(false);
@@ -231,7 +241,7 @@ function Review() {
     const card = queue[idx];
     if (!card) return;
     try {
-      await srsReview("default", card.id, rating);
+      await srsReview(card.deck || "default", card.id, rating);
     } catch {
       /* keep going; the schedule write is best-effort */
     }
@@ -254,7 +264,26 @@ function Review() {
           Spaced repetition (SM-2). Add cards from the Flashcards tab, then review them here — cards
           you find hard come back sooner.
         </p>
-        <button onClick={() => void load()} className="text-xs text-indigo-600 hover:underline">Refresh</button>
+        <div className="flex items-center gap-2">
+          {decks.length > 0 && (
+            <select
+              value={deck}
+              onChange={(e) => {
+                setDeck(e.target.value);
+                void load(e.target.value);
+              }}
+              className="rounded-lg border border-slate-300 p-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+            >
+              <option value="all">All decks</option>
+              {decks.map((d) => (
+                <option key={d.name} value={d.name}>
+                  {d.name} ({d.due} due)
+                </option>
+              ))}
+            </select>
+          )}
+          <button onClick={() => void load()} className="text-xs text-indigo-600 hover:underline">Refresh</button>
+        </div>
       </div>
 
       {stats && stats.total_cards > 0 && <StatsPanel s={stats} />}

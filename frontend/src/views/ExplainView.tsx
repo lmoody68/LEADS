@@ -2,11 +2,34 @@ import { useState } from "react";
 import {
   explainPlain,
   caseBrief,
+  exportPdf,
   type ExplainResult,
   type CaseBriefResult,
 } from "../lib/api";
 
 type Mode = "plain" | "brief";
+
+function briefToMarkdown(b: CaseBriefResult): string {
+  const L: string[] = [`# ${b.case_name || "Case Brief"}${b.citation ? ` — ${b.citation}` : ""}`];
+  if (b.synopsis) L.push(`\n${b.synopsis}`);
+  if (b.facts) L.push(`\n## Facts\n${b.facts}`);
+  if (b.procedural_history) L.push(`\n## Procedural History\n${b.procedural_history}`);
+  if (b.issues.length) L.push(`\n## Issue(s)\n${b.issues.map((i) => `- ${i}`).join("\n")}`);
+  if (b.rule) L.push(`\n## Rule\n${b.rule}`);
+  if (b.analysis) L.push(`\n## Analysis / Application\n${b.analysis}`);
+  if (b.holding) L.push(`\n## Holding\n${b.holding}`);
+  if (b.disposition) L.push(`\n## Disposition\n${b.disposition}`);
+  if (b.key_quotes.length) L.push(`\n## Key Quotes\n${b.key_quotes.map((q) => `- "${q}"`).join("\n")}`);
+  return L.join("\n");
+}
+
+async function exportBriefPdf(b: CaseBriefResult): Promise<void> {
+  try {
+    await exportPdf(`Case Brief — ${b.case_name || b.citation || "case"}`.slice(0, 120), briefToMarkdown(b), "leads-case-brief");
+  } catch {
+    /* best-effort */
+  }
+}
 
 export default function ExplainView() {
   const [mode, setMode] = useState<Mode>("plain");
@@ -189,6 +212,12 @@ export default function ExplainView() {
             {brief.disposition && (
               <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{brief.disposition}</span>
             )}
+            <button
+              onClick={() => void exportBriefPdf(brief)}
+              className="ml-auto rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+            >
+              📄 Export PDF
+            </button>
           </div>
           {brief.synopsis && <p className="italic text-slate-600">{brief.synopsis}</p>}
           {brief.facts && <Section title="Facts"><p className="text-slate-700">{brief.facts}</p></Section>}

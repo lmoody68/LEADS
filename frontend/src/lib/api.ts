@@ -396,6 +396,7 @@ export interface SrsDueCard {
   id: string;
   front: string;
   back: string;
+  deck: string;
 }
 export interface SrsDueResult {
   deck: string;
@@ -433,6 +434,28 @@ export interface SrsStats {
 }
 export function srsStats(): Promise<SrsStats> {
   return tutorGet<SrsStats>("/study/srs/stats");
+}
+
+// --- Phase 8: PDF export ----------------------------------------------------
+export async function exportPdf(title: string, markdown: string, filename?: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/export/pdf`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title, markdown, filename }),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => res.statusText);
+    throw new Error(`${res.status}: ${detail}`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${(filename || title || "leads-export").replace(/[^A-Za-z0-9_.-]+/g, "_").slice(0, 60)}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 // --- Phase 8: Assistant (agentic orchestrator) ------------------------------

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   generateMemo,
+  exportPdf as exportPdfApi,
   type MemoResponse,
   type MemoSource,
   type Citation,
@@ -52,6 +53,7 @@ export default function MemoView() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<MemoResponse | null>(null);
   const [copied, setCopied] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   async function run(q: string) {
     const query = q.trim();
@@ -103,6 +105,19 @@ export default function MemoView() {
       window.setTimeout(() => setCopied(false), 1800);
     } catch {
       /* clipboard may be blocked; export button is the fallback */
+    }
+  }
+
+  async function exportPdf() {
+    if (!result) return;
+    setPdfBusy(true);
+    try {
+      const title = `Research Memo — ${result.question}`.slice(0, 120);
+      await exportPdfApi(title, result.memo_markdown, "leads-research-memo");
+    } catch {
+      /* best-effort; .md export remains as a fallback */
+    } finally {
+      setPdfBusy(false);
     }
   }
 
@@ -261,6 +276,13 @@ export default function MemoView() {
               className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
             >
               Export .md
+            </button>
+            <button
+              onClick={() => void exportPdf()}
+              disabled={pdfBusy}
+              className="rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+            >
+              {pdfBusy ? "Exporting…" : "📄 Export PDF"}
             </button>
             {result.grounding && (
               <span className="ml-auto text-xs text-slate-400">{result.grounding}</span>
