@@ -65,6 +65,7 @@ const SECTIONS: Section[] = [
       "Keep 'deep' on to pull live case law per sub-question.",
       "Wait 20–60s — it runs several retrieval + LLM steps.",
       "Review the sub-question plan, the drafted sections, the sources, and the Reviewer's self-check.",
+      "Export the finished memo with 📄 Export PDF (or Copy / Export .md).",
     ],
     example: {
       label: "Scope-of-statute memo",
@@ -94,7 +95,7 @@ const SECTIONS: Section[] = [
       result:
         "“The person who lost says the judge made a mistake by deciding without a full trial, because important facts are still disputed.” + a glossary of every term.",
     },
-    note: "Great for prepping a juror, a student, or a non-lawyer. Case Brief works from a citation like 'Heintz v. Jenkins, 514 U.S. 291'.",
+    note: "Great for prepping a juror, a student, or a non-lawyer. Case Brief works from a citation like 'Heintz v. Jenkins, 514 U.S. 291' and can be exported with 📄 Export PDF.",
   },
   {
     id: "study",
@@ -102,18 +103,18 @@ const SECTIONS: Section[] = [
     tab: "Study Mode",
     title: "Study Mode — learning & practice toolkit",
     what:
-      "Five free study tools built on public legal data: Flashcards (auto term/holding cards), Issue-Spotter (a fact pattern you analyze, then get graded), Bluebook Cite formatter, Related Authorities (semantic 'find similar cases'), and Study Outlines.",
+      "Free study tools built on public legal data: Flashcards with SM-2 SPACED REPETITION (Review tab — streaks, stats, and named topic decks), Issue-Spotter (a fact pattern you analyze, then get AI-graded), a Bluebook Cite formatter, Related Authorities (semantic 'find similar cases'), and Study Outlines.",
     steps: [
-      "Pick a sub-mode: Flashcards · Issue-Spotter · Bluebook Cite · Related & Outline.",
-      "Flashcards: enter a topic or paste text → tap a card to flip term/answer.",
-      "Issue-Spotter: get a hypo, type the issues you spot, then 'Grade my answer' or 'Reveal model answer'.",
-      "Bluebook Cite: paste a rough citation → get it formatted. Related: paste a holding → similar cases.",
+      "Sub-modes: Flashcards · Review (SRS) · Issue-Spotter · Bluebook Cite · Related & Outline.",
+      "Flashcards: enter a topic or paste text → tap a card to flip → '➕ Add to deck' (name it by topic, e.g. FDCPA).",
+      "Review (SRS): pick a deck (or All), show answer, rate Again/Hard/Good/Easy — hard cards return sooner. Track your 🔥 streak, accuracy, and a 7-day due forecast.",
+      "Issue-Spotter: get a hypo, list the issues you spot, then 'Grade my answer'. Bluebook: paste a rough cite → formatted. Related: paste a holding → similar cases.",
     ],
     example: {
-      label: "Drill issue-spotting",
-      input: "Issue-Spotter, topic 'FDCPA third-party contact' → read the fact pattern → list the issues → Grade.",
+      label: "Build a study habit",
+      input: "Flashcards on 'FDCPA' → Add to deck 'FDCPA' → Review tab → rate the cards daily.",
       result:
-        "A fictional hypo, a score out of 100, what you found vs. missed, coaching feedback, and a reveal of the model issues.",
+        "Cards reschedule by how well you knew them, your streak grows each day you review, and the stats panel shows due/accuracy/maturity + a 7-day forecast.",
     },
     note: "General learning aid (students, paralegals, self-represented, anyone) — not legal advice. Cite formatting should be verified against the current Bluebook.",
   },

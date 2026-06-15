@@ -60,7 +60,8 @@ Citer → Reviewer, with inline citations to real sources. Takes 20–60s.
 - **Example:** *"Does the FDCPA apply to a law firm that only litigates
   debt-collection lawsuits?"* → memo with a sub-question plan, analysis grounded
   in § 1692a(6) + *Heintz v. Jenkins*, conclusion, and reviewer notes.
-- Use when you need a work-product, not just an answer.
+- Use when you need a work-product, not just an answer. **Export to PDF** (or
+  Copy / .md) with the buttons under the memo.
 
 ### 🗣️ Explain — Plain-English Transcriber + Case Brief
 Two modes:
@@ -70,13 +71,17 @@ Two modes:
     summary judgment…"* → *"The person who lost says the judge decided without a
     full trial because important facts are still disputed."*
 - **Case Brief (IRAC):** a citation or pasted opinion → Facts · Issue · Rule ·
-  Analysis · Holding.
+  Analysis · Holding. **Export to PDF** with the 📄 button.
   - **Example:** *"Heintz v. Jenkins, 514 U.S. 291"* → full brief.
 
 ### 📚 Study Mode — learning & practice toolkit
 Free, public-data study tools (general-purpose — students, paralegals,
-self-represented, anyone). Five sub-modes:
-- **Flashcards** — enter a topic or paste text → auto term/holding cards (tap to flip).
+self-represented, anyone). Sub-modes:
+- **Flashcards** — enter a topic or paste text → auto term/holding cards (tap to
+  flip) → **➕ Add to deck** (name it by topic, e.g. *FDCPA*).
+- **Review (SRS)** — **spaced repetition** (SM-2): pick a deck (or All), show
+  answer, rate Again/Hard/Good/Easy (hard cards come back sooner). Tracks your
+  **🔥 streak**, reviews, **accuracy**, card maturity, and a **7-day due forecast**.
 - **Issue-Spotter** — get a fictional fact pattern → list the issues you spot →
   *Grade my answer* (score + found/missed + coaching) or *Reveal model answer*.
 - **Bluebook Cite** — paste a rough citation → formatted Bluebook (e.g.
