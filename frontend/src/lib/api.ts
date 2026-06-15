@@ -419,6 +419,21 @@ export function srsReview(
 ): Promise<{ id: string; due: string; interval: number; ef: number; reps: number }> {
   return tutorPost("/study/srs/review", { deck, card_id: cardId, rating });
 }
+export interface SrsStats {
+  total_cards: number;
+  due_today: number;
+  maturity: { new: number; learning: number; mature: number };
+  reviews_total: number;
+  reviews_today: number;
+  accuracy_percent: number | null;
+  ratings: Record<string, number>;
+  streak: { current: number; longest: number; reviewed_today: boolean; active_days: number };
+  forecast: { date: string; due: number }[];
+  session_id: string;
+}
+export function srsStats(): Promise<SrsStats> {
+  return tutorGet<SrsStats>("/study/srs/stats");
+}
 
 // --- Phase 8: Assistant (agentic orchestrator) ------------------------------
 export interface AssistantResult {

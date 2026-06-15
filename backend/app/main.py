@@ -949,6 +949,18 @@ def srs_decks_route(
     return out
 
 
+@app.get("/api/study/srs/stats")
+def srs_stats_route(
+    x_session_id: str | None = Header(default=None, alias="X-Session-Id"),
+    session_id: str | None = None,
+) -> dict:
+    """Study stats + streaks for the session (cards, maturity, accuracy, streak, forecast)."""
+    sid = _session_id(x_session_id, session_id)
+    out = srs.stats(sid)
+    out["session_id"] = sid
+    return out
+
+
 @app.get("/api/study/srs/due")
 def srs_due_route(
     deck: str = "default",

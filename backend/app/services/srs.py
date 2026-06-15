@@ -33,6 +33,10 @@ def _index_key(session: str) -> str:
     return f"srs_decks::{session}"
 
 
+def _stats_key(session: str) -> str:
+    return f"srs_stats::{session}"
+
+
 def _cid(front: str) -> str:
     return hashlib.sha1(front.encode("utf-8")).hexdigest()[:12]
 
@@ -124,10 +128,25 @@ def _sm2(card: Dict[str, Any], q: int) -> None:
     card["due"] = (date.today() + timedelta(days=int(card["interval"]))).isoformat()
 
 
+def _record_review(session: str, rating: str) -> None:
+    """Log a review for stats/streaks: total, per-rating, and per-day counts."""
+    key = _stats_key(session)
+    s = cache.get(key)
+    if not isinstance(s, dict):
+        s = {"reviews_total": 0, "ratings": {"again": 0, "hard": 0, "good": 0, "easy": 0}, "by_day": {}}
+    s["reviews_total"] = int(s.get("reviews_total", 0)) + 1
+    s.setdefault("ratings", {})[rating] = int(s.get("ratings", {}).get(rating, 0)) + 1
+    today = _today_iso()
+    s.setdefault("by_day", {})[today] = int(s.get("by_day", {}).get(today, 0)) + 1
+    s["last_review_date"] = today
+    cache.set(key, s, ttl=_TTL)
+
+
 def review(session: str, deck: str, card_id: str, rating: str) -> Dict[str, Any]:
     """Apply a review rating (again/hard/good/easy) to a card and reschedule it."""
     deck = (deck or "default").strip() or "default"
-    q = _RATINGS.get((rating or "").strip().lower())
+    rating = (rating or "").strip().lower()
+    q = _RATINGS.get(rating)
     if q is None:
         return {"error": "rating must be one of: again, hard, good, easy"}
     key = _deck_key(session, deck)
@@ -138,5 +157,94 @@ def review(session: str, deck: str, card_id: str, rating: str) -> Dict[str, Any]
         if c.get("id") == card_id:
             _sm2(c, q)
             cache.set(key, d, ttl=_TTL)
+            _record_review(session, rating)
             return {"id": card_id, "due": c["due"], "interval": c["interval"], "ef": c["ef"], "reps": c["reps"]}
     return {"error": "card not found"}
+
+
+def _streaks(day_strings: Any) -> tuple[int, int]:
+    """Return (current_streak, longest_streak) in days from a set of ISO dates."""
+    days = set()
+    for x in (day_strings or []):
+        try:
+            days.add(date.fromisoformat(x))
+        except Exception:
+            pass
+    if not days:
+        return 0, 0
+    sd = sorted(days)
+    longest = run = 1
+    for i in range(1, len(sd)):
+        if (sd[i] - sd[i - 1]).days == 1:
+            run += 1
+            longest = max(longest, run)
+        else:
+            run = 1
+    longest = max(longest, run)
+    # current streak: anchor at today (reviewed today) else yesterday (still standing).
+    today = date.today()
+    anchor = today if today in days else (today - timedelta(days=1))
+    current = 0
+    d = anchor
+    while d in days:
+        current += 1
+        d = d - timedelta(days=1)
+    return current, longest
+
+
+def stats(session: str) -> Dict[str, Any]:
+    """Aggregate study stats + streaks for a session (across all decks)."""
+    today = _today_iso()
+    total = due = new = learning = mature = 0
+    by_due: Dict[str, int] = {}
+    for name in _load_index(session):
+        d = cache.get(_deck_key(session, name))
+        if not isinstance(d, dict):
+            continue
+        for c in d.get("cards", []):
+            total += 1
+            duedate = c.get("due", today)
+            if duedate <= today:
+                due += 1
+            reps = int(c.get("reps", 0))
+            interval = float(c.get("interval", 0))
+            if reps == 0:
+                new += 1
+            elif interval < 21:
+                learning += 1
+            else:
+                mature += 1
+            by_due[duedate] = by_due.get(duedate, 0) + 1
+
+    s = cache.get(_stats_key(session))
+    s = s if isinstance(s, dict) else {}
+    by_day = s.get("by_day", {}) if isinstance(s.get("by_day"), dict) else {}
+    ratings = s.get("ratings", {}) if isinstance(s.get("ratings"), dict) else {}
+    rated = sum(int(v) for v in ratings.values())
+    accuracy = round(100.0 * (int(ratings.get("good", 0)) + int(ratings.get("easy", 0))) / rated, 1) if rated else None
+    current, longest = _streaks(by_day.keys())
+
+    # 7-day forecast: day 0 lumps in everything overdue; days 1-6 are exact-day due.
+    forecast = []
+    base = date.today()
+    for i in range(7):
+        ds = (base + timedelta(days=i)).isoformat()
+        cnt = sum(v for k, v in by_due.items() if (k <= ds if i == 0 else k == ds))
+        forecast.append({"date": ds, "due": cnt})
+
+    return {
+        "total_cards": total,
+        "due_today": due,
+        "maturity": {"new": new, "learning": learning, "mature": mature},
+        "reviews_total": int(s.get("reviews_total", 0)),
+        "reviews_today": int(by_day.get(today, 0)),
+        "accuracy_percent": accuracy,
+        "ratings": {k: int(v) for k, v in ratings.items()},
+        "streak": {
+            "current": current,
+            "longest": longest,
+            "reviewed_today": today in by_day,
+            "active_days": len(by_day),
+        },
+        "forecast": forecast,
+    }

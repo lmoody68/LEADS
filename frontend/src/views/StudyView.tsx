@@ -10,6 +10,7 @@ import {
   srsDue,
   srsDecks,
   srsReview,
+  srsStats,
   type FlashcardsResult,
   type HypoResult,
   type HypoEvalResult,
@@ -18,6 +19,7 @@ import {
   type OutlineResult,
   type SrsDueCard,
   type SrsDeck,
+  type SrsStats,
 } from "../lib/api";
 
 type Mode = "flashcards" | "hypo" | "cite" | "research" | "review";
@@ -189,6 +191,15 @@ function Review() {
   const [loading, setLoading] = useState(false);
   const { err, setErr } = useErr();
   const [done, setDone] = useState(false);
+  const [stats, setStats] = useState<SrsStats | null>(null);
+
+  async function refreshStats() {
+    try {
+      setStats(await srsStats());
+    } catch {
+      /* stats are best-effort */
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -202,6 +213,7 @@ function Review() {
       setIdx(0);
       setRevealed(false);
       if (due.cards.length === 0) setDone(true);
+      void refreshStats();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -223,6 +235,7 @@ function Review() {
     } catch {
       /* keep going; the schedule write is best-effort */
     }
+    void refreshStats();
     if (idx + 1 >= queue.length) {
       setDone(true);
     } else {
@@ -243,6 +256,9 @@ function Review() {
         </p>
         <button onClick={() => void load()} className="text-xs text-indigo-600 hover:underline">Refresh</button>
       </div>
+
+      {stats && stats.total_cards > 0 && <StatsPanel s={stats} />}
+
       {decks.length > 0 && (
         <div className="flex flex-wrap gap-2 text-xs">
           {decks.map((d) => (
@@ -287,6 +303,64 @@ function Review() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function StatsPanel({ s }: { s: SrsStats }) {
+  const m = s.maturity;
+  const matTotal = Math.max(1, m.new + m.learning + m.mature);
+  const maxFc = Math.max(1, ...s.forecast.map((f) => f.due));
+  return (
+    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Metric label="🔥 Streak" value={`${s.streak.current} day${s.streak.current === 1 ? "" : "s"}`}
+          sub={`best ${s.streak.longest} · ${s.streak.reviewed_today ? "active today" : "review to keep it!"}`} />
+        <Metric label="Reviews today" value={String(s.reviews_today)} sub={`${s.reviews_total} all-time`} />
+        <Metric label="Due today" value={String(s.due_today)} sub={`${s.total_cards} cards total`} />
+        <Metric label="Accuracy" value={s.accuracy_percent == null ? "—" : `${s.accuracy_percent}%`} sub="good + easy" />
+      </div>
+
+      {/* Maturity bar */}
+      <div>
+        <div className="mb-1 text-[10px] uppercase tracking-wide text-slate-400">Card maturity</div>
+        <div className="flex h-3 overflow-hidden rounded-full bg-slate-100">
+          <div className="bg-sky-400" style={{ width: `${(m.new / matTotal) * 100}%` }} title={`new ${m.new}`} />
+          <div className="bg-amber-400" style={{ width: `${(m.learning / matTotal) * 100}%` }} title={`learning ${m.learning}`} />
+          <div className="bg-emerald-500" style={{ width: `${(m.mature / matTotal) * 100}%` }} title={`mature ${m.mature}`} />
+        </div>
+        <div className="mt-1 flex gap-3 text-[11px] text-slate-500">
+          <span><span className="text-sky-500">●</span> new {m.new}</span>
+          <span><span className="text-amber-500">●</span> learning {m.learning}</span>
+          <span><span className="text-emerald-600">●</span> mature {m.mature}</span>
+        </div>
+      </div>
+
+      {/* 7-day forecast */}
+      <div>
+        <div className="mb-1 text-[10px] uppercase tracking-wide text-slate-400">Due — next 7 days</div>
+        <div className="flex items-end gap-1.5">
+          {s.forecast.map((f, i) => (
+            <div key={f.date} className="flex flex-1 flex-col items-center gap-1">
+              <div className="flex h-12 w-full items-end">
+                <div className="w-full rounded-t bg-indigo-400" style={{ height: `${(f.due / maxFc) * 100}%` }} title={`${f.due} due`} />
+              </div>
+              <span className="text-[9px] text-slate-400">{i === 0 ? "today" : f.date.slice(5)}</span>
+              <span className="text-[9px] font-medium text-slate-500">{f.due}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-lg bg-slate-50 p-2.5">
+      <div className="text-[10px] uppercase tracking-wide text-slate-400">{label}</div>
+      <div className="text-lg font-semibold text-slate-800">{value}</div>
+      {sub && <div className="text-[10px] text-slate-400">{sub}</div>}
     </div>
   );
 }

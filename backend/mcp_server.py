@@ -184,6 +184,12 @@ def leads_outline(topic: str) -> dict:
 
 
 @mcp.tool()
+def leads_study_stats() -> dict:
+    """Spaced-repetition study stats + streak (cards, due, accuracy, current/longest streak, 7-day forecast)."""
+    return _get("/study/srs/stats")
+
+
+@mcp.tool()
 def leads_ingest(source: str, query: str, limit: int = 5) -> dict:
     """
     Grow the corpus from an official public API. source ∈ {courtlistener, govinfo,
