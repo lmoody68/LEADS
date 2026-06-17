@@ -82,8 +82,28 @@ def observability() -> dict:
     }
 
 
+LOCAL_MODEL = os.getenv("LOCAL_LLM_MODEL", "qwen2.5:7b-instruct")
+
+
+def _local_enabled() -> bool:
+    """Self-hosted local (Ollama) tier — OFF unless LOCAL_LLM_ENABLED is set, so a
+    cloud deploy (which can't reach a laptop's localhost) ignores it."""
+    return os.getenv("LOCAL_LLM_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _local_privacy_first() -> bool:
+    """When set, route case-file/legal text to the LOCAL model FIRST so sensitive
+    content is processed entirely on-machine (loopback — never leaves the host)."""
+    return os.getenv("LOCAL_LLM_PRIVACY_FIRST", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def available_providers() -> list[str]:
-    """Return the list of providers that have a key configured (cascade order)."""
+    """Return the providers to try, in cascade order.
+
+    The env-gated local (Ollama) tier is appended LAST (a vendor-independent safety
+    net if every cloud provider is down) — or PREPENDED FIRST when
+    LOCAL_LLM_PRIVACY_FIRST is set (Phase-4 privacy routing for sensitive case files).
+    """
     out = []
     if os.getenv("GROQ_API_KEY"):
         out.append("groq")
@@ -95,6 +115,11 @@ def available_providers() -> list[str]:
         out.append("gemini")
     if os.getenv("ANTHROPIC_API_KEY"):
         out.append("anthropic")
+    if _local_enabled():
+        if _local_privacy_first():
+            out.insert(0, "local")
+        else:
+            out.append("local")
     return out
 
 
@@ -188,12 +213,21 @@ def _call_anthropic(system: str, user: str) -> str:
     return text.strip()
 
 
+@_traceable(run_type="llm", name="local")
+def _call_local(system: str, user: str) -> str:
+    """Local Ollama model via its OpenAI-compatible endpoint (no key needed)."""
+    base = os.getenv("LOCAL_LLM_BASE_URL", "http://localhost:11434/v1").rstrip("/")
+    # Ollama ignores the bearer token but the OpenAI-compatible path expects one.
+    return _openai_chat(f"{base}/chat/completions", "ollama", LOCAL_MODEL, system, user)
+
+
 _PROVIDERS = {
     "groq": _call_groq,
     "cerebras": _call_cerebras,
     "mistral": _call_mistral,
     "gemini": _call_gemini,
     "anthropic": _call_anthropic,
+    "local": _call_local,
 }
 
 
@@ -234,4 +268,5 @@ def _model_for(name: str) -> str:
         "mistral": MISTRAL_MODEL,
         "gemini": GEMINI_MODEL,
         "anthropic": ANTHROPIC_MODEL,
+        "local": LOCAL_MODEL,
     }.get(name, "?")
