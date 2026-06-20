@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ResearchView from "./views/ResearchView";
 import MemoView from "./views/MemoView";
 import ComplianceView from "./views/ComplianceView";
@@ -100,6 +100,29 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("guide");
   const active = TABS.find((t) => t.id === tab) ?? TABS[0];
 
+  // Keep-alive: mount each tab on first visit and keep it mounted (just hidden when
+  // inactive) so in-progress searches, typed queries, and results survive tab switches.
+  const [mounted, setMounted] = useState<Set<Tab>>(() => new Set<Tab>(["guide"]));
+  useEffect(() => {
+    setMounted((prev) => (prev.has(tab) ? prev : new Set(prev).add(tab)));
+  }, [tab]);
+
+  const renderView = (id: Tab) => {
+    switch (id) {
+      case "guide": return <GuideView />;
+      case "assistant": return <AssistantView />;
+      case "research": return <ResearchView />;
+      case "memo": return <MemoView />;
+      case "explain": return <ExplainView />;
+      case "study": return <StudyView />;
+      case "compliance": return <ComplianceView />;
+      case "document": return <DocumentView />;
+      case "tutor": return <TutorView />;
+      case "classifier": return <ClassifierView />;
+      case "data": return <DataView />;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <header className="border-b border-slate-200 bg-white">
@@ -136,29 +159,13 @@ export default function App() {
         {/* Per-tab landing blurb so each feature is self-describing. */}
         <p className="mb-3 text-sm text-slate-500">{active.blurb}</p>
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          {tab === "guide" ? (
-            <GuideView />
-          ) : tab === "assistant" ? (
-            <AssistantView />
-          ) : tab === "research" ? (
-            <ResearchView />
-          ) : tab === "memo" ? (
-            <MemoView />
-          ) : tab === "explain" ? (
-            <ExplainView />
-          ) : tab === "study" ? (
-            <StudyView />
-          ) : tab === "compliance" ? (
-            <ComplianceView />
-          ) : tab === "document" ? (
-            <DocumentView />
-          ) : tab === "tutor" ? (
-            <TutorView />
-          ) : tab === "classifier" ? (
-            <ClassifierView />
-          ) : (
-            <DataView />
-          )}
+          {/* Keep-alive: render every visited tab, hide the inactive ones with CSS so
+              their state (queries, results, running searches) is never lost. */}
+          {TABS.filter((t) => mounted.has(t.id)).map((t) => (
+            <div key={t.id} style={{ display: tab === t.id ? undefined : "none" }}>
+              {renderView(t.id)}
+            </div>
+          ))}
         </div>
         <p className="mt-4 text-center text-xs text-slate-400">
           Public/licensed legal data only · Uploaded documents stay local · General legal
