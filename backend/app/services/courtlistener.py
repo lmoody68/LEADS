@@ -141,43 +141,102 @@ def _best_opinion_text(op: Dict[str, Any]) -> str:
     return ""
 
 
+# --- Court hierarchy (surface binding/controlling authority first) -----------
+# Legal research must privilege CONTROLLING authority: U.S. Supreme Court over
+# federal Courts of Appeals over District Courts. A relevance-only search can
+# bury the controlling case (e.g. it missed Heintz v. Jenkins, 514 U.S. 291,
+# the SCOTUS case holding the FDCPA applies to litigating attorneys). So we
+# always ALSO sweep the Supreme Court, and rank results by court precedence.
+_CIRCUITS = {"ca1", "ca2", "ca3", "ca4", "ca5", "ca6", "ca7", "ca8", "ca9",
+             "ca10", "ca11", "cadc", "cafc"}
+
+
+def _court_rank(court_field: str) -> int:
+    """0 = SCOTUS (binding everywhere), 1 = federal appellate, 2 = everything else."""
+    c = (court_field or "").lower()
+    if c == "scotus" or "supreme court of the united states" in c:
+        return 0
+    if c in _CIRCUITS or (c.startswith("ca") and c[2:].isdigit()) \
+            or "court of appeals" in c or "circuit" in c:
+        return 1
+    return 2
+
+
+def _cluster_key(cluster: Dict[str, Any]) -> str:
+    cid = cluster.get("cluster_id") or cluster.get("id")
+    if cid:
+        return f"id:{cid}"
+    cites = cluster.get("citation")
+    if isinstance(cites, list) and cites:
+        return f"cite:{cites[0]}"
+    return f"name:{(cluster.get('caseName') or cluster.get('case_name') or '').lower()}"
+
+
+def _search_clusters(client: httpx.Client, query: str, page_size: int,
+                     court: Optional[str] = None) -> List[Dict[str, Any]]:
+    """One v4 opinion search → raw cluster list ([] on any error). `court` filters
+    by CourtListener court id (e.g. 'scotus')."""
+    p: Dict[str, Any] = {"type": "o", "q": query, "order_by": "score desc"}
+    if court:
+        p["court"] = court
+    data = _get_json(client, f"{_SEARCH_URL}?{httpx.QueryParams(p)}")
+    return (data or {}).get("results", []) or []
+
+
 # --- Public: search + fetch --------------------------------------------------
-def search_opinions(query: str, max_results: int = 3) -> List[Dict[str, Any]]:
+def search_opinions(query: str, max_results: int = 3,
+                    federal_sweep: bool = True) -> List[Dict[str, Any]]:
     """
     Search CourtListener opinions and return up to `max_results` normalized
-    opinions with full text:
-        {case_name, citation, court, date, url, text}
+    opinions with full text: {case_name, citation, court, date, url, text}.
 
-    Always returns a list. On any failure returns [] so the caller (rag.answer)
-    falls back to the seeded statute corpus.
+    Always ALSO checks the U.S. Supreme Court (controlling-authority sweep) and
+    orders results by court precedence (SCOTUS → federal appellate → other), so
+    binding federal precedent is surfaced rather than buried under district hits.
+
+    Always returns a list. On any failure returns [] so the caller falls back to
+    the seeded statute corpus.
     """
     query = (query or "").strip()
     if not query:
         return []
 
-    cache_key = f"search::{query}::{max_results}::{'tok' if has_token() else 'anon'}"
+    cache_key = f"search::{query}::{max_results}::{'tok' if has_token() else 'anon'}::fed3"
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
 
-    params = httpx.QueryParams({"type": "o", "q": query, "order_by": "score desc"})
-    search_url = f"{_SEARCH_URL}?{params}"
-
     results: List[Dict[str, Any]] = []
     with httpx.Client() as client:
-        data = _get_json(client, search_url)
-        if not data:
+        # Controlling-authority sweep first (Supreme Court), then the general
+        # relevance search; merge, dedup, and stable-sort by court precedence so
+        # SCOTUS / circuit authority leads.
+        clusters: List[Dict[str, Any]] = []
+        if federal_sweep:
+            # Widen the SCOTUS sweep so multiple controlling cases are considered
+            # (e.g. both Heintz v. Jenkins and Jerman v. Carlisle for the FDCPA).
+            clusters += _search_clusters(client, query, max(6, max_results * 2), court="scotus")
+        clusters += _search_clusters(client, query, max_results * 3)
+        if not clusters:
             return []
-        clusters = data.get("results", []) or []
-        for cluster in clusters[: max_results * 2]:  # over-fetch; some may have no text
+
+        seen, ordered = set(), []
+        for cluster in clusters:
+            k = _cluster_key(cluster)
+            if k in seen:
+                continue
+            seen.add(k)
+            ordered.append(cluster)
+        # Stable sort keeps relevance order within each court tier.
+        ordered.sort(key=lambda c: _court_rank(f"{c.get('court_id', '')} {c.get('court', '')}"))
+
+        for cluster in ordered:
             normalized = _normalize_cluster(client, cluster)
             if normalized and normalized.get("text"):
                 results.append(normalized)
             if len(results) >= max_results:
                 break
 
-    # Cache even an empty list briefly? No — only cache non-empty so a transient
-    # rate-limit doesn't poison future (authenticated) runs.
     if results:
         _cache_put(cache_key, results)
     return results

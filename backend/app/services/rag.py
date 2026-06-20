@@ -217,6 +217,28 @@ def ingest_courtlistener(search_query: str, max_results: int = 3) -> List[Dict[s
 
 
 # --- Hybrid retrieval: dense + BM25 + RRF ------------------------------------
+def _dedup_hits(hits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Collapse multiple retrieved chunks of the SAME authority to one entry.
+
+    A single opinion (or statute section) is often split into several chunks, so
+    naive retrieval can return the same case 4-5 times and crowd out other
+    controlling authority. Keep the highest-ranked chunk per (citation, section)
+    so the citation list shows distinct sources.
+    """
+    seen: set = set()
+    out: List[Dict[str, Any]] = []
+    for h in hits:
+        key = (
+            (h.get("citation") or h.get("source_title") or h.get("snippet", "")[:60]).strip().lower(),
+            (h.get("section") or "").strip().lower(),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(h)
+    return out
+
+
 def _hit_from_meta(doc: str, meta: Dict[str, Any], score: float) -> Dict[str, Any]:
     return {
         "source_title": meta.get("source_title", ""),
@@ -507,7 +529,12 @@ def answer(
     # 3. Hybrid retrieval. Retrieve using the rewritten query (richer for sparse),
     # but keep the original question available for the LLM.
     retr_query = search_query or question
-    hits, retrieval_debug = hybrid_retrieve(retr_query, k=k, collection_name=collection_name)
+    # Fetch a larger pool then collapse duplicate chunks of the same authority,
+    # so k distinct cases/statutes surface (not the same case repeated 4x).
+    raw_hits, retrieval_debug = hybrid_retrieve(
+        retr_query, k=max(k * 3, 12), collection_name=collection_name
+    )
+    hits = _dedup_hits(raw_hits)[:k]
 
     if not hits:
         return {

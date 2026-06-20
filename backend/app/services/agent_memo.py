@@ -115,8 +115,17 @@ def _plan(question: str) -> Tuple[List[str], str]:
 # STEP 2 — RETRIEVER (reuses Phase-1 hybrid retrieval + CourtListener)
 # ===========================================================================
 def _source_key(hit: Dict[str, Any]) -> str:
-    """Dedupe key for a retrieved source (citation + first 60 chars of snippet)."""
-    return f"{hit.get('citation','')}::{(hit.get('snippet') or '')[:60]}"
+    """Dedupe key at the AUTHORITY level (one entry per case/statute section).
+
+    Keying on the citation (not the snippet) collapses the several chunks a single
+    opinion is split into, so one case can't fill the source pool 4-5 times and
+    crowd out other controlling authority.
+    """
+    cite = (hit.get("citation") or "").strip().lower()
+    if cite:
+        return cite
+    # Fall back to title+section for sources that lack a formal citation.
+    return f"{(hit.get('source_title') or '').strip().lower()}::{(hit.get('section') or '').strip().lower()}"
 
 
 def _retrieve_pool(
