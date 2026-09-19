@@ -35,7 +35,7 @@ import httpx
 logger = logging.getLogger("leads.llm_router")
 
 # Sensible free-tier defaults; overridable via env.
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 CEREBRAS_MODEL = os.getenv("CEREBRAS_MODEL", "gpt-oss-120b")
 MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
