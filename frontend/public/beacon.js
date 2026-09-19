@@ -1,2 +1,0 @@
-// Visitor beacon -> central collector. Fire-and-forget, never blocks the page.
-(function(){try{var d={s:'leads',page:location.pathname,title:document.title,ref:document.referrer};var u='https://leslie-moody-ai.netlify.app/.netlify/functions/beacon';var b=JSON.stringify(d);if(navigator.sendBeacon){navigator.sendBeacon(u,new Blob([b],{type:'text/plain'}));}else{fetch(u,{method:'POST',mode:'no-cors',keepalive:true,body:b}).catch(function(){});}}catch(e){}})();
